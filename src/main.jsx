@@ -49,6 +49,25 @@ const customers = [
   { name: 'Atacado Santa Clara', city: 'Belo Horizonte/MG', interest: 'Novidades', status: 'Inativo', last: '21 dias', device: 'Android', group: 'Inativos' },
 ];
 
+const sellers = [
+  { loja: 'Comercial 10 Irmãos', responsavel: 'Jonas', email: 'tempusatacado@gmail.com', plano: 'Pro', status: 'Ativo', clientes: 1284, campanhas: 36, uso: '26%', vencimento: '05/06/2026' },
+  { loja: 'Loja Santa Rita', responsavel: 'Maria Rita', email: 'contato@santarita.com.br', plano: 'Grátis', status: 'Teste', clientes: 198, campanhas: 4, uso: '66%', vencimento: 'Teste grátis' },
+  { loja: 'Atacado São José', responsavel: 'Carlos Mendes', email: 'vendas@saojose.com.br', plano: 'Business', status: 'Ativo', clientes: 8420, campanhas: 112, uso: '42%', vencimento: '12/06/2026' },
+  { loja: 'Bazar Católico Luz', responsavel: 'Ana Paula', email: 'ana@bazarluz.com.br', plano: 'Pro', status: 'Vencido', clientes: 2360, campanhas: 27, uso: '47%', vencimento: 'Vencido há 3 dias' },
+  { loja: 'Presentes Aparecida', responsavel: 'Roberto', email: 'contato@presentesaparecida.com.br', plano: 'Grátis', status: 'Bloqueado', clientes: 301, campanhas: 2, uso: '100%', vencimento: 'Limite atingido' },
+];
+
+const adminMenu = [
+  { id: 'geral', label: 'Dashboard Geral', icon: LayoutDashboard },
+  { id: 'vendedores', label: 'Vendedores', icon: Store },
+  { id: 'lojas', label: 'Lojas', icon: Globe },
+  { id: 'planos', label: 'Planos e limites', icon: Crown },
+  { id: 'pagamentos', label: 'Pagamentos', icon: CreditCard },
+  { id: 'campanhas', label: 'Campanhas globais', icon: SendHorizontal },
+  { id: 'suporte', label: 'Suporte', icon: MessageCircle },
+  { id: 'sistema', label: 'Sistema', icon: Settings },
+];
+
 const menu = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { id: 'campanhas', label: 'Campanhas', icon: Send },
@@ -77,12 +96,12 @@ function StatCard({ icon: Icon, label, value, detail }) {
   return <Card><div className="stat-card"><div><p>{label}</p><h3>{value}</h3><small>{detail}</small></div><div className="icon-gradient"><Icon size={22} /></div></div></Card>;
 }
 
-function Landing({ onEnter, onSignup }) {
+function Landing({ onEnter, onSignup, onAdmin }) {
   return <div className="landing">
     <div className="landing-bg" />
     <header className="topbar">
       <img src={logo} className="logo-full" alt="Chamy" />
-      <div className="top-actions"><Button variant="ghostLight" onClick={onEnter}><LogIn size={16}/> Entrar</Button><Button variant="white" onClick={onSignup}><UserPlus size={16}/> Testar grátis</Button></div>
+      <div className="top-actions"><Button variant="ghostLight" onClick={onEnter}><LogIn size={16}/> Entrar</Button><Button variant="ghostLight" onClick={onAdmin}><ShieldCheck size={16}/> Admin</Button><Button variant="white" onClick={onSignup}><UserPlus size={16}/> Testar grátis</Button></div>
     </header>
     <main className="hero">
       <motion.section initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} className="hero-copy">
@@ -168,6 +187,49 @@ function Plan({ name, price, features, featured }) { return <Card className={fea
 function SettingsPage() { return <div className="settings-layout"><Card><h3>Configuração da loja</h3><Field defaultValue="Comercial 10 Irmãos"/><Field defaultValue="https://sualoja.com.br"/><Field defaultValue="contato@sualoja.com.br"/><pre>{'<script src="https://chamy.com.br/widget.js" data-loja="comercial-10-irmaos"></script>'}</pre><p className="success"><ShieldCheck size={18}/> Permissão e descadastro controlados automaticamente.</p><Button><Save size={16}/> Salvar configurações</Button></Card><Card><h3>Integrações para produção</h3><Integration icon={Bell} title="OneSignal" desc="Motor real de entrega das notificações push." status="Recomendado"/><Integration icon={Store} title="Supabase" desc="Login, banco de dados e contas de usuários." status="Backend"/><Integration icon={CreditCard} title="Mercado Pago / Stripe" desc="Planos e assinaturas mensais." status="Pagamentos"/><Integration icon={MessageCircle} title="WhatsApp" desc="Levar cliente para fechar pedido no WhatsApp." status="Link"/></Card></div> }
 function Integration({ icon: Icon, title, desc, status }) { return <div className="integration"><div><span><Icon size={18}/></span><div><b>{title}</b><p>{desc}</p></div></div><Badge tone="violet">{status}</Badge></div> }
 
-function Root() { const [screen,setScreen]=useState('landing'); if(screen==='signup') return <AuthScreen onEnter={()=>setScreen('app')} onBack={()=>setScreen('landing')}/>; if(screen==='app') return <AppShell/>; return <Landing onEnter={()=>setScreen('app')} onSignup={()=>setScreen('signup')}/>; }
+
+function AdminShell({ onVendorPanel, onLanding }) {
+  const [active, setActive] = useState('geral');
+  const [q, setQ] = useState('');
+  const [openMenu, setOpenMenu] = useState(false);
+  const filtered = useMemo(() => sellers.filter(s => `${s.loja} ${s.responsavel} ${s.email} ${s.plano} ${s.status}`.toLowerCase().includes(q.toLowerCase())), [q]);
+  const activeLabel = adminMenu.find(m => m.id === active)?.label;
+  return <div className="app-shell admin-mode">
+    <aside className={`sidebar ${openMenu ? 'open' : ''}`}>
+      <div className="side-logo"><img src={logo} alt="Chamy" /></div>
+      <Badge tone="violet">Área do administrador</Badge>
+      <nav>{adminMenu.map(item => { const Icon=item.icon; return <button key={item.id} onClick={()=>{setActive(item.id);setOpenMenu(false)}} className={active===item.id?'active':''}><Icon size={18}/>{item.label}</button> })}</nav>
+      <div className="plan-card"><div><b>Admin Chamy</b><Badge tone="green">Master</Badge></div><p>Controle vendedores, planos, uso, campanhas e suporte.</p><Button onClick={onVendorPanel}>Ver painel do vendedor</Button></div>
+    </aside>
+    <main className="main">
+      <header className="page-header"><button className="mobile-menu" onClick={()=>setOpenMenu(!openMenu)}><Menu/></button><div><h2>{activeLabel}</h2><p>Controle interno da plataforma Chamy • Dados demonstrativos prontos para Supabase</p></div><div className="header-actions"><Button variant="light" onClick={onVendorPanel}><Store size={16}/> Painel vendedor</Button><Button onClick={onLanding}><ExternalLink size={16}/> Landing</Button></div></header>
+      {active==='geral' && <AdminDashboard/>}
+      {active==='vendedores' && <AdminSellers q={q} setQ={setQ} filtered={filtered}/>} 
+      {active==='lojas' && <AdminStores filtered={filtered}/>} 
+      {active==='planos' && <AdminPlans/>} 
+      {active==='pagamentos' && <AdminPayments/>} 
+      {active==='campanhas' && <AdminGlobalCampaigns/>} 
+      {active==='suporte' && <AdminSupport/>} 
+      {active==='sistema' && <AdminSystem/>} 
+    </main>
+  </div>;
+}
+
+function AdminDashboard() { return <div className="space"><div className="stats-grid"><StatCard icon={Store} label="Vendedores cadastrados" value="128" detail="+9 nos últimos 7 dias"/><StatCard icon={Crown} label="Planos pagos" value="43" detail="R$ 2.407/mês estimado"/><StatCard icon={Users} label="Clientes finais" value="42.918" detail="somando todas as lojas"/><StatCard icon={Send} label="Push enviados" value="186 mil" detail="este mês"/></div><div className="dashboard-grid"><Card><div className="card-title"><div><h3>Visão geral dos vendedores</h3><p>Contas que precisam de atenção.</p></div><Badge tone="amber">3 alertas</Badge></div><div className="row-list">{sellers.slice(0,5).map(s=><SellerRow key={s.email} s={s}/>)}</div></Card><Card className="suggestion"><ShieldCheck/><h3>Ações rápidas do Admin</h3><p>Libere teste grátis, altere planos, bloqueie contas vencidas, acompanhe uso e envie avisos gerais para todos os vendedores.</p><Button variant="white">Enviar aviso geral</Button></Card></div></div> }
+
+function SellerRow({ s }) { return <div className="campaign-row"><div className="campaign-info"><div className="small-icon"><Store size={18}/></div><div><h4>{s.loja}</h4><p>{s.responsavel} • {s.email}</p><small>Plano {s.plano} • {s.clientes} clientes • {s.campanhas} campanhas</small></div></div><div className="campaign-stats"><Badge tone={s.status==='Ativo'?'green':s.status==='Vencido'?'amber':s.status==='Bloqueado'?'slate':'violet'}>{s.status}</Badge><span>Uso {s.uso}</span><span>{s.vencimento}</span><button title="Editar"><Edit3 size={14}/></button><button title="Bloquear"><Power size={14}/></button></div></div> }
+
+function AdminSellers({ q, setQ, filtered }) { return <Card><div className="toolbar"><div className="searchbox"><Search size={18}/><Field value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar vendedor, loja, e-mail, plano ou status..."/></div><Button variant="light"><Filter size={16}/> Filtros</Button><Button><Plus size={16}/> Novo vendedor</Button></div><div className="table-wrap"><table><thead><tr><th>Loja</th><th>Responsável</th><th>E-mail</th><th>Plano</th><th>Status</th><th>Clientes</th><th>Campanhas</th><th>Vencimento</th><th>Ações</th></tr></thead><tbody>{filtered.map(s=><tr key={s.email}><td><b>{s.loja}</b></td><td>{s.responsavel}</td><td>{s.email}</td><td>{s.plano}</td><td><Badge tone={s.status==='Ativo'?'green':s.status==='Vencido'?'amber':s.status==='Bloqueado'?'slate':'violet'}>{s.status}</Badge></td><td>{s.clientes}</td><td>{s.campanhas}</td><td>{s.vencimento}</td><td><div className="mini-actions"><button>Ativar</button><button>Plano</button><button>Bloquear</button></div></td></tr>)}</tbody></table></div></Card> }
+
+function AdminStores({ filtered }) { return <div className="space"><div className="stats-grid three"><StatCard icon={Globe} label="Lojas ativas" value="92" detail="com widget instalado"/><StatCard icon={Bell} label="Permissões push" value="42.918" detail="clientes autorizados"/><StatCard icon={AlertCircle} label="Com alerta" value="7" detail="limite, atraso ou erro"/></div><Card><h3>Lojas e uso da plataforma</h3><div className="row-list">{filtered.map(s=><SellerRow key={s.email} s={s}/>)}</div></Card></div> }
+
+function AdminPlans() { return <div className="plans-grid"><Plan name="Grátis" price="R$0" features={['Até 300 inscritos','Campanhas manuais','1 loja','Marca Chamy','Suporte básico']}/><Plan name="Pro" price="R$49" featured features={['Até 5.000 inscritos','Campanhas programadas','Automações','Segmentação','Sem marca Chamy']}/><Plan name="Business" price="R$99" features={['Até 20.000 inscritos','Múltiplas lojas','Relatórios avançados','Suporte prioritário','Integrações']}/></div> }
+function AdminPayments() { return <div className="space"><div className="stats-grid three"><StatCard icon={CreditCard} label="Receita mensal" value="R$ 2.407" detail="estimativa dos planos ativos"/><StatCard icon={AlertCircle} label="Vencidos" value="5" detail="precisam de cobrança"/><StatCard icon={CheckCircle2} label="Pagos" value="43" detail="assinaturas ativas"/></div><Card><h3>Pagamentos e cobranças</h3><div className="row-list">{sellers.map(s=><SellerRow key={s.email} s={s}/>)}</div></Card></div> }
+function AdminGlobalCampaigns() { return <div className="campaign-layout"><Card className="campaign-form"><h3>Aviso geral para vendedores</h3><p>Use para avisar manutenção, novidade da plataforma ou cobrança.</p><Field defaultValue="Nova função disponível no Chamy"/><TextArea defaultValue="Agora você pode programar campanhas automáticas para a semana inteira."/><Select><option>Todos os vendedores</option><option>Somente plano grátis</option><option>Somente plano Pro</option><option>Contas vencidas</option></Select><Button><SendHorizontal size={16}/> Enviar aviso</Button></Card><Card><h3>Campanhas globais recentes</h3><div className="row-list"><CampaignRow c={{title:'Aviso de melhoria',message:'Novas automações de campanhas disponíveis.',status:'Ativa',frequency:'Envio único',duration:'Hoje',audience:'Todos os vendedores',sent:128,clicks:41,ctr:'32%'}}/><CampaignRow c={{title:'Lembrete de pagamento',message:'Regularize sua assinatura para manter as campanhas ativas.',status:'Programada',frequency:'Diária',duration:'3 dias',audience:'Contas vencidas',sent:0,clicks:0,ctr:'0%'}}/></div></Card></div> }
+function AdminSupport() { return <div className="space"><Card><div className="card-title"><div><h3>Chamados de suporte</h3><p>Organize dúvidas, problemas de instalação e solicitações de plano.</p></div><Button><Plus size={16}/> Novo chamado</Button></div><div className="row-list"><SupportRow title="Dúvida para instalar widget" loja="Loja Santa Rita" status="Aberto"/><SupportRow title="Alterar plano para Business" loja="Atacado São José" status="Em análise"/><SupportRow title="Pagamento vencido" loja="Bazar Católico Luz" status="Urgente"/></div></Card></div> }
+function SupportRow({ title, loja, status }) { return <div className="campaign-row"><div className="campaign-info"><div className="small-icon"><MessageCircle size={18}/></div><div><h4>{title}</h4><p>{loja}</p><small>Última atualização hoje</small></div></div><div className="campaign-stats"><Badge tone={status==='Urgente'?'amber':status==='Aberto'?'violet':'slate'}>{status}</Badge><button><Eye size={14}/></button></div></div> }
+function AdminSystem() { return <div className="settings-layout"><Card><h3>Configurações gerais</h3><Field defaultValue="Chamy"/><Field defaultValue="https://chamy.com.br"/><Field defaultValue="suporte@chamy.com.br"/><div className="check-boxes"><label><input type="checkbox" defaultChecked/> Permitir cadastro grátis</label><label><input type="checkbox" defaultChecked/> Bloquear envio ao atingir limite do plano</label><label><input type="checkbox" defaultChecked/> Mostrar marca Chamy no plano grátis</label></div><Button><Save size={16}/> Salvar configurações</Button></Card><Card><h3>Próxima conexão com Supabase</h3><Integration icon={Store} title="Tabela vendedores" desc="Contas, lojas, planos e status." status="Pronto"/><Integration icon={Users} title="Tabela clientes" desc="Clientes finais inscritos por loja." status="Pronto"/><Integration icon={Send} title="Tabela campanhas" desc="Campanhas, envios, cliques e relatórios." status="Pronto"/><Integration icon={ShieldCheck} title="Permissões admin" desc="Acesso restrito para você administrar tudo." status="Pronto"/></Card></div> }
+
+function Root() { const [screen,setScreen]=useState('landing'); if(screen==='signup') return <AuthScreen onEnter={()=>setScreen('app')} onBack={()=>setScreen('landing')}/>; if(screen==='admin') return <AdminShell onVendorPanel={()=>setScreen('app')} onLanding={()=>setScreen('landing')}/>; if(screen==='app') return <AppShell/>; return <Landing onEnter={()=>setScreen('app')} onSignup={()=>setScreen('signup')} onAdmin={()=>setScreen('admin')}/>; }
 
 createRoot(document.getElementById('root')).render(<Root />);
