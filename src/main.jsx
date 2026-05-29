@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Bell, BarChart3, Send, Zap, Users, Crown, Settings, Store, LifeBuoy, Plus, Search, Play, Pause, Trash2, Copy, ShieldCheck, MousePointerClick, MessageCircle, TrendingUp, ShoppingCart, Rocket, Gift, Sparkles, RotateCcw, Globe, CheckCircle2, Lock, LogOut, UserPlus, Eye, CreditCard, HelpCircle, Menu, MoreVertical } from 'lucide-react';
 import './styles.css';
+import { supabase, isSupabaseConfigured } from './lib/supabase';
 
 const plans = {
   Gratis: { label: 'Grátis', price: 'R$0', limit: 100, badge: 'Teste', features: ['Até 100 inscritos', 'Campanhas manuais', '1 loja', 'Marca Chamy', 'Suporte básico'] },
@@ -43,21 +44,75 @@ function Badge({ children, tone = 'violet' }) { return <span className={`badge $
 function Logo({ compact = false }) { return <div className={compact ? 'brand compact' : 'brand'}><img src="/logo-chamy.png" alt="Chamy" /></div>; }
 
 function Login({ setUser }) {
+  const [mode, setMode] = useState('login');
+  const [name, setName] = useState('');
+  const [storeName, setStoreName] = useState('');
+  const [email, setEmail] = useState('jsprimao@gmail.com');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
+
+  async function finishLogin(sessionUser) {
+    if (!supabase) return;
+    const { data: profile } = await supabase.from('profiles').select('*').eq('id', sessionUser.id).maybeSingle();
+    if (!profile) {
+      setMessage('Usuário autenticado, mas sem perfil na tabela profiles. Crie o perfil no Supabase.');
+      return;
+    }
+    setUser({ id: sessionUser.id, role: profile.tipo === 'admin' ? 'admin' : 'seller', name: profile.nome || profile.email, email: profile.email, plan: profile.plano || 'gratis' });
+  }
+
+  async function handleLogin(e) {
+    e.preventDefault();
+    if (!isSupabaseConfigured) {
+      setMessage('Supabase ainda não configurado na Vercel. Entrando em modo demonstração.');
+      setUser({ role: 'admin', name: 'Administrador Demo', plan: 'Business' });
+      return;
+    }
+    setLoading(true); setMessage('');
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    setLoading(false);
+    if (error) return setMessage(error.message);
+    await finishLogin(data.user);
+  }
+
+  async function handleSignup(e) {
+    e.preventDefault();
+    if (!isSupabaseConfigured) return setMessage('Supabase ainda não configurado na Vercel.');
+    setLoading(true); setMessage('');
+    const { data, error } = await supabase.auth.signUp({ email, password });
+    if (error) { setLoading(false); return setMessage(error.message); }
+    const userId = data.user?.id;
+    if (userId) {
+      await supabase.from('profiles').insert({ id: userId, nome: name || storeName || email, email, tipo: 'vendedor', plano: 'gratis', status: 'ativo' });
+      await supabase.from('lojas').insert({ user_id: userId, nome: storeName || name || 'Minha loja', status: 'ativa' });
+    }
+    setLoading(false);
+    setMessage('Conta criada. Se o Supabase pedir confirmação por e-mail, confirme antes de entrar.');
+  }
+
   return <div className="loginScreen">
     <div className="loginHero">
       <Logo />
       <h1>Campanhas simples para chamar clientes de volta.</h1>
-      <p>Promoções, novidades, recuperação de clientes e automações de vendas em uma plataforma fácil para qualquer lojista.</p>
-      <div className="heroCards"><span>Campanha em 1 minuto</span><span>Envio a cada 4 horas</span><span>Automações prontas</span><span>Painel do vendedor + Admin</span></div>
+      <p>Agora com login real pelo Supabase para vendedores e administração geral do Chamy.</p>
+      <div className="heroCards"><span>Login real</span><span>Cadastro de lojas</span><span>Painel Admin</span><span>Supabase conectado</span></div>
     </div>
     <Card className="loginBox">
       <img className="loginIcon" src="/app-icon.png" alt="" />
-      <h2>Entrar no Chamy</h2>
-      <p className="muted">Use os acessos de demonstração para testar o painel.</p>
-      <label>E-mail</label><input defaultValue="loja@demo.com" />
-      <label>Senha</label><input type="password" defaultValue="123456" />
-      <Button className="primary" onClick={() => setUser({ role: 'seller', name: 'João Vendedor', plan: 'Pro' })}><Lock size={17}/> Entrar como loja</Button>
-      <div className="two"><Button onClick={() => setUser({ role: 'admin', name: 'Administrador' })}><ShieldCheck size={17}/> Admin</Button><Button onClick={() => setUser({ role: 'seller', name: 'Nova Loja', plan: 'Gratis' })}><UserPlus size={17}/> Conta grátis</Button></div>
+      <h2>{mode === 'login' ? 'Entrar no Chamy' : 'Criar conta grátis'}</h2>
+      <p className="muted">Use seu e-mail e senha cadastrados no Supabase.</p>
+      <form onSubmit={mode === 'login' ? handleLogin : handleSignup}>
+        {mode === 'signup' && <><label>Seu nome</label><input value={name} onChange={e=>setName(e.target.value)} placeholder="Seu nome" /><label>Nome da loja</label><input value={storeName} onChange={e=>setStoreName(e.target.value)} placeholder="Nome da loja" /></>}
+        <label>E-mail</label><input value={email} onChange={e=>setEmail(e.target.value)} placeholder="seu@email.com" />
+        <label>Senha</label><input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Sua senha" />
+        {message && <p className="authMessage">{message}</p>}
+        <Button className="primary" disabled={loading}>{loading ? 'Aguarde...' : mode === 'login' ? 'Entrar' : 'Criar conta'}</Button>
+      </form>
+      <div className="two">
+        <Button onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}>{mode === 'login' ? <UserPlus size={17}/> : <Lock size={17}/>} {mode === 'login' ? 'Criar conta' : 'Já tenho conta'}</Button>
+        <Button onClick={() => setUser({ role: 'admin', name: 'Administrador Demo', plan: 'Business' })}><ShieldCheck size={17}/> Demo</Button>
+      </div>
     </Card>
   </div>;
 }
@@ -71,7 +126,7 @@ function Shell({ user, setUser, active, setActive, menu, children }) {
       <Logo />
       <nav>{menu.map(([id, label, Icon]) => <button key={id} onClick={() => setActive(id)} className={active === id ? 'active' : ''}><Icon size={19}/><span>{label}</span><b>›</b></button>)}</nav>
       <div className="referral"><Rocket/><h3>Indique e ganhe</h3><p>Convide lojistas e ganhe descontos exclusivos.</p><Button>Indicar agora</Button></div>
-      <button className="logout" onClick={() => setUser(null)}><LogOut size={17}/> Sair</button>
+      <button className="logout" onClick={async () => { if (supabase) await supabase.auth.signOut(); setUser(null); }}><LogOut size={17}/> Sair</button>
     </aside>
     <main>
       <header className="topbar"><div className="topTitle"><Menu/><div><h1>{menu.find(m => m[0] === active)?.[1]}</h1><p>{user.role === 'admin' ? 'Administração geral da plataforma' : 'Visão geral da sua loja'}</p></div></div><div className="userArea"><HelpCircle/> <Bell/> <div className="avatar">{user.name.slice(0,2).toUpperCase()}</div><div><b>{user.name}</b><small>{user.role === 'admin' ? 'Dono da plataforma' : `Plano ${user.plan}`}</small></div></div></header>
@@ -126,6 +181,53 @@ function Admin({ user, setUser, data, setData }) { const [active,setActive]=useS
 
 function Table({ rows, cols }) { return <div className="table"><table><thead><tr>{cols.map(c=><th key={c}>{c}</th>)}</tr></thead><tbody>{rows.map(r=><tr key={r.id}>{cols.map(c=><td key={c}>{c==='status'?<Badge tone={r[c]==='Ativo'?'green':'gray'}>{r[c]}</Badge>:c==='sales'?`R$ ${Number(r[c]||0).toLocaleString('pt-BR')}`:r[c]}</td>)}</tr>)}</tbody></table></div>; }
 
-function App(){ const [data,setData]=useData(); const [user,setUser]=useState(null); if(!user) return <Login setUser={setUser}/>; return user.role==='admin'?<Admin user={user} setUser={setUser} data={data} setData={setData}/>:<Seller user={user} setUser={setUser} data={data} setData={setData}/>; }
+function App(){
+  const [data,setData]=useData();
+  const [user,setUser]=useState(null);
+  const [checking,setChecking]=useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    async function loadSession(){
+      if (!isSupabaseConfigured || !supabase) { setChecking(false); return; }
+      const { data: sessionData } = await supabase.auth.getSession();
+      const sessionUser = sessionData.session?.user;
+      if (!sessionUser) { setChecking(false); return; }
+      const { data: profile } = await supabase.from('profiles').select('*').eq('id', sessionUser.id).maybeSingle();
+      if (alive && profile) setUser({ id: sessionUser.id, role: profile.tipo === 'admin' ? 'admin' : 'seller', name: profile.nome || profile.email, email: profile.email, plan: profile.plano || 'gratis' });
+      if (alive) setChecking(false);
+    }
+    loadSession();
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    async function loadInitialData(){
+      if (!user?.id || !supabase) return;
+      try {
+        if (user.role === 'admin') {
+          const { data: profiles } = await supabase.from('profiles').select('*').order('created_at', { ascending:false });
+          const { data: lojas } = await supabase.from('lojas').select('*').order('created_at', { ascending:false });
+          setData(prev => ({...prev, vendors: (profiles || []).map((p, idx) => ({ id: idx+1, name: p.nome || p.email, email: p.email, plan: p.plano || 'gratis', status: p.status || 'ativo', subscribers: 0, campaigns: 0, sales: 0, tipo: p.tipo, loja: (lojas || []).find(l=>l.user_id===p.id)?.nome || '' })) }));
+        } else {
+          const { data: lojas } = await supabase.from('lojas').select('*').eq('user_id', user.id).limit(1);
+          const lojaId = lojas?.[0]?.id;
+          if (!lojaId) return;
+          const { data: clientes } = await supabase.from('clientes').select('*').eq('loja_id', lojaId).order('created_at', { ascending:false });
+          const { data: campanhas } = await supabase.from('campanhas').select('*').eq('loja_id', lojaId).order('created_at', { ascending:false });
+          setData(prev => ({...prev,
+            customers: (clientes || []).map((c, idx) => ({ id: c.id || idx, name: c.nome || 'Cliente', city: c.cidade || '', whats: c.whatsapp || '', interest: c.interesse || 'Todos', status: c.status || 'Ativo', last: 'Banco Supabase', device: c.aceitou_push ? 'Push ativo' : 'Sem push' })),
+            campaigns: (campanhas || []).map((c, idx) => ({ id: c.id || idx, title: c.titulo, msg: c.mensagem, status: c.status || 'rascunho', audience: c.publico || 'Todos', freq: c.frequencia || 'único', duration: `${c.duracao_dias || 1} dias`, sent: 0, clicks: 0, rate: '0%', date: new Date(c.created_at).toLocaleDateString('pt-BR') }))
+          }));
+        }
+      } catch (e) { console.warn('Falha ao carregar Supabase', e); }
+    }
+    loadInitialData();
+  }, [user?.id, user?.role]);
+
+  if (checking) return <div className="loginScreen"><Card className="loginBox"><Logo/><h2>Carregando Chamy...</h2></Card></div>;
+  if(!user) return <Login setUser={setUser}/>;
+  return user.role==='admin'?<Admin user={user} setUser={setUser} data={data} setData={setData}/>:<Seller user={user} setUser={setUser} data={data} setData={setData}/>;
+}
 
 createRoot(document.getElementById('root')).render(<App/>);
