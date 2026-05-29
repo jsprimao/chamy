@@ -64,16 +64,28 @@ function Login({ setUser }) {
     e.preventDefault();
     if (!isSupabaseConfigured || !supabase) return setMessage('Supabase não configurado na Vercel.');
     if (!storeName.trim()) return setMessage('Informe o nome da loja.');
+    if (!password || password.length < 6) return setMessage('A senha precisa ter pelo menos 6 caracteres.');
     setLoading(true); setMessage('');
-    const { data, error } = await supabase.auth.signUp({ email, password });
-    if (error) { setLoading(false); return setMessage(error.message); }
-    const userId = data.user?.id;
-    if (userId) {
-      await supabase.from('profiles').upsert({ id: userId, nome: name || storeName || email, email, tipo: 'vendedor', plano: 'gratis', status: 'ativo' });
-      await supabase.from('lojas').insert({ user_id: userId, nome: storeName || 'Minha loja', status: 'ativa' });
-    }
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          nome: name || storeName || email,
+          store_name: storeName || 'Minha loja'
+        }
+      }
+    });
     setLoading(false);
-    setMessage('Conta criada. Se o Supabase solicitar confirmação, confirme no e-mail antes de entrar.');
+    if (error) return setMessage(error.message);
+
+    // O perfil e a loja são criados automaticamente no Supabase por trigger.
+    // Isso evita falha quando a confirmação de e-mail está ativada.
+    if (data.session?.user) {
+      setMessage('Conta criada com sucesso. Agora você já pode entrar.');
+    } else {
+      setMessage('Conta criada. Se o Supabase pedir confirmação, confirme no e-mail antes de entrar.');
+    }
     setMode('login');
   }
 
