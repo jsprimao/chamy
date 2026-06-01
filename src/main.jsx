@@ -19,6 +19,75 @@ function Logo({ compact = false }) { return <div className={compact ? 'brand com
 function normalizePlan(plan = 'gratis') { return String(plan).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
 function nicePlan(plan = 'gratis') { return plans[normalizePlan(plan)]?.label || plan || 'Grátis'; }
 
+const oneSignalAppId = import.meta.env.VITE_ONESIGNAL_APP_ID || '';
+let oneSignalInitPromise = null;
+
+function isOneSignalConfigured() {
+  return Boolean(oneSignalAppId);
+}
+
+function loadOneSignalSdk() {
+  if (window.OneSignalDeferred) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[data-onesignal-sdk="true"]');
+    if (existing) {
+      existing.addEventListener('load', () => resolve(), { once: true });
+      existing.addEventListener('error', reject, { once: true });
+      return;
+    }
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    const script = document.createElement('script');
+    script.src = 'https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js';
+    script.async = true;
+    script.defer = true;
+    script.dataset.onesignalSdk = 'true';
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Não foi possível carregar o SDK do OneSignal.'));
+    document.head.appendChild(script);
+  });
+}
+
+async function initOneSignal(externalId) {
+  if (!isOneSignalConfigured()) throw new Error('OneSignal não configurado. Confira VITE_ONESIGNAL_APP_ID na Vercel.');
+  await loadOneSignalSdk();
+  if (!oneSignalInitPromise) {
+    oneSignalInitPromise = new Promise((resolve, reject) => {
+      window.OneSignalDeferred = window.OneSignalDeferred || [];
+      window.OneSignalDeferred.push(async function(OneSignal) {
+        try {
+          await OneSignal.init({ appId: oneSignalAppId, allowLocalhostAsSecureOrigin: true });
+          resolve(OneSignal);
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+  }
+  const OneSignal = await oneSignalInitPromise;
+  if (externalId && OneSignal.login) {
+    try { await OneSignal.login(externalId); } catch (e) { console.warn('Falha ao vincular externalId no OneSignal', e); }
+  }
+  return OneSignal;
+}
+
+async function requestPushSubscription(externalId) {
+  if (!('Notification' in window)) throw new Error('Este navegador não suporta notificações web push.');
+  const OneSignal = await initOneSignal(externalId);
+  if (OneSignal.Notifications?.requestPermission) {
+    await OneSignal.Notifications.requestPermission();
+  } else {
+    await Notification.requestPermission();
+  }
+  const permission = Notification.permission;
+  let subscriptionId = '';
+  let optedIn = permission === 'granted';
+  try {
+    subscriptionId = OneSignal.User?.PushSubscription?.id || '';
+    optedIn = Boolean(OneSignal.User?.PushSubscription?.optedIn ?? optedIn);
+  } catch (e) {}
+  return { permission, optedIn, subscriptionId };
+}
+
 async function getProfile(sessionUser) {
   const { data: profile, error } = await supabase.from('profiles').select('*').eq('id', sessionUser.id).maybeSingle();
   if (error) throw error;
@@ -123,7 +192,7 @@ function Login({ setUser }) {
   </div>;
 }
 
-const sellerMenu = [ ['dash','Dashboard',BarChart3], ['camp','Campanhas',Send], ['auto','Automação',Zap], ['clients','Inscritos',Users], ['segments','Segmentos',Users], ['reports','Relatórios',TrendingUp], ['store','Loja',Store], ['plans','Planos',Crown], ['config','Configurações',Settings] ];
+const sellerMenu = [ ['dash','Dashboard',BarChart3], ['camp','Campanhas',Send], ['auto','Automação',Zap], ['clients','Inscritos',Users], ['capture','Captura Push',Bell], ['segments','Segmentos',Users], ['reports','Relatórios',TrendingUp], ['store','Loja',Store], ['plans','Planos',Crown], ['config','Configurações',Settings] ];
 const adminMenu = [ ['dash','Dashboard Geral',BarChart3], ['vendors','Vendedores',Store], ['plans','Planos',Crown], ['global','Campanhas Globais',Send], ['support','Suporte',LifeBuoy], ['settings','Configurações',Settings] ];
 
 function Shell({ user, setUser, active, setActive, menu, children }) {
@@ -131,7 +200,6 @@ function Shell({ user, setUser, active, setActive, menu, children }) {
     <aside className="sidebar">
       <Logo />
       <nav>{menu.map(([id, label, Icon]) => <button key={id} onClick={() => setActive(id)} className={active === id ? 'active' : ''}><Icon size={19}/><span>{label}</span><b>›</b></button>)}</nav>
-      <div className="referral"><Rocket/><h3>Indique e ganhe</h3><p>Convide lojistas e ganhe descontos exclusivos.</p><Button>Indicar agora</Button></div>
       <button className="logout" onClick={async () => { if (supabase) await supabase.auth.signOut(); setUser(null); }}><LogOut size={17}/> Sair</button>
     </aside>
     <main>
@@ -214,14 +282,53 @@ function Customers({ data, setData, lojaId, refreshData }) {
 }
 
 function Automations(){return <div className="autoGrid">{[['Cliente sumido','Envia aviso para quem não acessa há 7 dias.'],['Novidades da semana','Toda sexta-feira às 09h.'],['Carrinho abandonado','Lembra o cliente de finalizar o pedido.'],['Boas-vindas','Mensagem logo após aceitar notificações.']].map((a,i)=><Card key={a[0]}><Zap className="bigIcon"/><div className="cardHead"><h3>{a[0]}</h3><Badge tone={i===2?'gray':'green'}>{i===2?'Inativa':'Ativa'}</Badge></div><p>{a[1]}</p><Button>{i===2?<Play size={17}/>:<Pause size={17}/>} {i===2?'Ativar':'Pausar'}</Button></Card>)}</div>}
-function Capture(){return <div className="campaignPage"><Card><h3>Widget de captura</h3><p className="muted">Mensagem exibida para visitantes aceitarem receber notificações.</p><label>Título</label><input defaultValue="Receba promoções e novidades"/><label>Mensagem</label><textarea defaultValue="Quer ser avisado quando chegarem ofertas e produtos novos?"/><Button className="primary" onClick={()=>navigator.clipboard?.writeText('<script src=https://chamy.com.br/widget.js></script>')}><Copy size={17}/> Copiar código</Button><pre>{'<script src="https://chamy.com.br/widget.js" data-loja="sua-loja"></script>'}</pre></Card><Card className="preview"><Globe/><div className="popup"><Bell/><h3>Receba promoções e novidades</h3><p>Quer ser avisado quando chegarem ofertas e produtos novos?</p><div className="two"><Button className="primary">Sim, quero</Button><Button>Agora não</Button></div></div></Card></div>}
+function Capture({ loja, data, setData, refreshData, user }){
+  const [status, setStatus] = useState(isOneSignalConfigured() ? 'Pronto para ativar no navegador.' : 'Configure VITE_ONESIGNAL_APP_ID na Vercel.');
+  const [loading, setLoading] = useState(false);
+  const widgetCode = `<script src="https://chamy.vercel.app/widget.js" data-loja="${loja?.id || 'ID_DA_LOJA'}"></script>`;
+  async function activatePush(){
+    if (!loja?.id) return setStatus('Nenhuma loja vinculada ao usuário.');
+    try {
+      setLoading(true);
+      setStatus('Solicitando permissão do navegador...');
+      const result = await requestPushSubscription(`${loja.id}:${user?.id || 'usuario'}`);
+      if (result.permission !== 'granted') {
+        setStatus('Permissão negada. Autorize as notificações no navegador para testar.');
+        return;
+      }
+      const nome = result.subscriptionId ? `Push ${result.subscriptionId.slice(0, 8)}` : 'Inscrito Push';
+      const { data: created, error } = await supabase.from('clientes').insert({
+        loja_id: loja.id,
+        nome,
+        cidade: 'Navegador',
+        interesse: 'Todos',
+        aceitou_push: true,
+        status: 'ativo'
+      }).select('*').single();
+      if (error) throw error;
+      setData({...data, customers:[{ id:created.id, name:created.nome, city:created.cidade || '', whats:'', interest:created.interesse || 'Todos', status:created.status || 'ativo', last:'Agora', device:'Push ativo' }, ...data.customers]});
+      setStatus('Push ativado e inscrito salvo no Supabase. Agora este navegador está registrado para testes.');
+      refreshData?.();
+    } catch (e) {
+      console.error(e);
+      setStatus(e.message || 'Falha ao ativar OneSignal.');
+    } finally {
+      setLoading(false);
+    }
+  }
+  function testLocal(){
+    if(!('Notification' in window)) return setStatus('Seu navegador não suporta notificações.');
+    Notification.requestPermission().then(p => p === 'granted' ? new Notification('Chamy ativo', { body:'As notificações já podem aparecer neste navegador.', icon:'/favicon.png' }) : setStatus('Permissão negada.'));
+  }
+  return <div className="campaignPage"><Card><h3>Widget de captura</h3><p className="muted">Mensagem exibida para visitantes aceitarem receber notificações.</p><label>Título</label><input defaultValue="Receba promoções e novidades"/><label>Mensagem</label><textarea defaultValue="Quer ser avisado quando chegarem ofertas e produtos novos?"/><div className="two"><Button className="primary" onClick={activatePush} disabled={loading}><Bell size={17}/> {loading ? 'Ativando...' : 'Ativar notificações neste navegador'}</Button><Button onClick={testLocal}><Play size={17}/> Teste local</Button></div><p className="authMessage">{status}</p><Button onClick={()=>navigator.clipboard?.writeText(widgetCode)}><Copy size={17}/> Copiar código do widget</Button><pre>{widgetCode}</pre><p className="muted">Observação: o widget público será a próxima etapa. Nesta versão, o botão acima registra seu navegador para teste real com OneSignal.</p></Card><Card className="preview"><Globe/><div className="popup"><Bell/><h3>Receba promoções e novidades</h3><p>Quer ser avisado quando chegarem ofertas e produtos novos?</p><div className="two"><Button className="primary" onClick={activatePush}>Sim, quero</Button><Button>Agora não</Button></div></div></Card></div>}
+
 function Plans(){return <div className="plans">{Object.values(plans).map((p,i)=><Card className={i===1?'featured':''} key={p.label}><Badge tone={i===1?'violet':'gray'}>{p.badge}</Badge><h2>{p.label}</h2><h1>{p.price}<small>/mês</small></h1>{p.features.map(f=><p className="ok" key={f}><CheckCircle2/> {f}</p>)}<Button className="primary">Escolher plano</Button></Card>)}</div>}
 function Reports(){return <><div className="stats"><Stat Icon={TrendingUp} label="Melhor campanha" value="Promoção" change="em breve"/><Stat Icon={Bell} label="Melhor horário" value="09h" change="em breve" color="blue"/><Stat Icon={Users} label="Melhor público" value="Promoções" change="em breve" color="green"/></div><Card><h3>Desempenho por campanha</h3><div className="bars"><p>Promoção Relâmpago <i style={{width:'85%'}} /></p><p>Novidades da Semana <i style={{width:'55%'}} /></p><p>Cliente Sumido <i style={{width:'35%'}} /></p></div></Card></>}
 function SettingsPanel({ loja }){return <Card><h3>Configurações</h3><label>Nome da loja</label><input defaultValue={loja?.nome || ''}/><label>Site ou catálogo</label><input defaultValue={loja?.site || ''}/><p className="ok"><ShieldCheck/> Permissão e descadastro serão controlados automaticamente.</p><Button className="primary">Salvar configurações</Button></Card>}
 
 function Seller({ user, setUser, data, setData, loja, refreshData }) {
   const [active,setActive]=useState('dash');
-  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={sellerMenu}>{active==='dash'&&<Dashboard data={data} user={user} setActive={setActive}/>} {active==='camp'&&<Campaigns data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData}/>} {active==='auto'&&<Automations/>} {active==='clients'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData}/>} {active==='segments'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData}/>} {active==='reports'&&<Reports/>} {active==='store'&&<SettingsPanel loja={loja}/>} {active==='plans'&&<Plans/>} {active==='config'&&<SettingsPanel loja={loja}/>}</Shell>;
+  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={sellerMenu}>{active==='dash'&&<Dashboard data={data} user={user} setActive={setActive}/>} {active==='camp'&&<Campaigns data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData}/>} {active==='auto'&&<Automations/>} {active==='clients'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData}/>} {active==='capture'&&<Capture loja={loja} data={data} setData={setData} refreshData={refreshData} user={user}/>} {active==='segments'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData}/>} {active==='reports'&&<Reports/>} {active==='store'&&<SettingsPanel loja={loja}/>} {active==='plans'&&<Plans/>} {active==='config'&&<SettingsPanel loja={loja}/>}</Shell>;
 }
 
 function Admin({ user, setUser, data, setData, refreshData }) {
