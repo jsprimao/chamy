@@ -70,9 +70,10 @@ async function initOneSignal(externalId) {
   return OneSignal;
 }
 
-async function requestPushSubscription(externalId) {
+async function requestPushSubscription(externalId, lojaId) {
   if (!('Notification' in window)) throw new Error('Este navegador não suporta notificações web push.');
   const OneSignal = await initOneSignal(externalId);
+  try { if (lojaId && OneSignal.User?.addTag) await OneSignal.User.addTag('loja_id', lojaId); } catch (e) { console.warn('Falha ao gravar tag loja_id no OneSignal', e); }
   if (OneSignal.Notifications?.requestPermission) {
     await OneSignal.Notifications.requestPermission();
   } else {
@@ -256,13 +257,32 @@ function Campaigns({ data, setData, lojaId, refreshData }) {
     if (error) return alert(error.message);
     setData({...data,campaigns:data.campaigns.filter(x=>x.id!==c.id)});
   }
+  async function sendCampaign(c){
+    if (!confirm(`Enviar a campanha "${c.title}" agora?`)) return;
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      if (!token) return alert('Sessão expirada. Entre novamente.');
+      const res = await fetch('/api/send-campaign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ campaignId: c.id })
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Falha ao enviar campanha.');
+      alert(`Campanha enviada! Destinatários estimados: ${json.recipients || 0}`);
+      refreshData?.();
+    } catch (e) {
+      alert(e.message || 'Falha ao enviar campanha.');
+    }
+  }
   function testNotify(){ if(!('Notification' in window)) return alert('Seu navegador não suporta notificações.'); Notification.requestPermission().then(p=> p==='granted' ? new Notification(form.title,{body:form.msg,icon:'/favicon.png'}) : alert('Permissão de notificação negada.')); }
-  return <div className="campaignPage"><Card className="creator"><h3>Nova campanha</h3><p className="muted">Escolha um modelo pronto ou personalize.</p><div className="templates">{templates.map(([name,Icon,title,msg])=><button key={name} onClick={()=>setForm({...form,title,msg})}><Icon/><b>{name}</b></button>)}</div><label>Título</label><input value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/><label>Mensagem</label><textarea value={form.msg} onChange={e=>setForm({...form,msg:e.target.value})}/><label>Link de destino</label><input value={form.link} onChange={e=>setForm({...form,link:e.target.value})} placeholder="https://sualoja.com/promocoes"/><div className="two"><div><label>Público</label><select value={form.audience} onChange={e=>setForm({...form,audience:e.target.value})}><option>Todos</option><option>Promoções</option><option>Clientes inativos</option><option>Quem clicou na última campanha</option></select></div><div><label>Frequência</label><select value={form.freq} onChange={e=>setForm({...form,freq:e.target.value})}><option>A cada 4 horas</option><option>Diária</option><option>Semanal</option><option>Envio único</option></select></div></div><label>Duração</label><select value={form.duration} onChange={e=>setForm({...form,duration:e.target.value})}><option>7 dias</option><option>3 dias</option><option>1 dia</option><option>Até pausar</option></select><label className="check"><input type="checkbox" defaultChecked/> Não enviar de madrugada</label><label className="check"><input type="checkbox" defaultChecked/> Não repetir para quem já clicou</label><div className="two"><Button className="primary" onClick={addCampaign} disabled={saving}><Play size={17}/> {saving ? 'Salvando...' : 'Iniciar campanha'}</Button><Button onClick={testNotify}><Bell size={17}/> Testar notificação</Button></div></Card><Card><div className="cardHead"><h3>Campanhas</h3><Badge>{data.campaigns.length} criadas</Badge></div><CampaignList data={data} onToggle={toggleCampaign} onDelete={deleteCampaign}/></Card></div>;
+  return <div className="campaignPage"><Card className="creator"><h3>Nova campanha</h3><p className="muted">Escolha um modelo pronto ou personalize.</p><div className="templates">{templates.map(([name,Icon,title,msg])=><button key={name} onClick={()=>setForm({...form,title,msg})}><Icon/><b>{name}</b></button>)}</div><label>Título</label><input value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/><label>Mensagem</label><textarea value={form.msg} onChange={e=>setForm({...form,msg:e.target.value})}/><label>Link de destino</label><input value={form.link} onChange={e=>setForm({...form,link:e.target.value})} placeholder="https://sualoja.com/promocoes"/><div className="two"><div><label>Público</label><select value={form.audience} onChange={e=>setForm({...form,audience:e.target.value})}><option>Todos</option><option>Promoções</option><option>Clientes inativos</option><option>Quem clicou na última campanha</option></select></div><div><label>Frequência</label><select value={form.freq} onChange={e=>setForm({...form,freq:e.target.value})}><option>A cada 4 horas</option><option>Diária</option><option>Semanal</option><option>Envio único</option></select></div></div><label>Duração</label><select value={form.duration} onChange={e=>setForm({...form,duration:e.target.value})}><option>7 dias</option><option>3 dias</option><option>1 dia</option><option>Até pausar</option></select><label className="check"><input type="checkbox" defaultChecked/> Não enviar de madrugada</label><label className="check"><input type="checkbox" defaultChecked/> Não repetir para quem já clicou</label><div className="two"><Button className="primary" onClick={addCampaign} disabled={saving}><Play size={17}/> {saving ? 'Salvando...' : 'Iniciar campanha'}</Button><Button onClick={testNotify}><Bell size={17}/> Testar notificação</Button></div></Card><Card><div className="cardHead"><h3>Campanhas</h3><Badge>{data.campaigns.length} criadas</Badge></div><CampaignList data={data} onToggle={toggleCampaign} onDelete={deleteCampaign} onSend={sendCampaign}/></Card></div>;
 }
 
-function CampaignList({ data, onToggle, onDelete }) {
+function CampaignList({ data, onToggle, onDelete, onSend }) {
   if (!data.campaigns.length) return <p className="muted">Nenhuma campanha criada ainda.</p>;
-  return <div className="campaignList">{data.campaigns.map(c=><div className="campaign" key={c.id}><div className="thumb"><Send/></div><div><b>{c.title}</b><p>{c.msg}</p><small>{c.freq} • {c.duration} • {c.audience}</small></div><div className="metrics"><span><b>{c.sent}</b>Enviados</span><span><b>{c.clicks}</b>Cliques</span><span><b>{c.rate}</b>Taxa</span><Badge tone={c.status==='Ativa'?'green':c.status==='Programada'?'violet':'gray'}>{c.status}</Badge>{onToggle&&<><Button onClick={()=>onToggle(c)}>{c.status==='Ativa'?<Pause size={16}/>:<Play size={16}/>}</Button><Button onClick={()=>onDelete(c)}><Trash2 size={16}/></Button></>}<MoreVertical size={18}/></div></div>)}</div>;
+  return <div className="campaignList">{data.campaigns.map(c=><div className="campaign" key={c.id}><div className="thumb"><Send/></div><div><b>{c.title}</b><p>{c.msg}</p><small>{c.freq} • {c.duration} • {c.audience}</small></div><div className="metrics"><span><b>{c.sent}</b>Enviados</span><span><b>{c.clicks}</b>Cliques</span><span><b>{c.rate}</b>Taxa</span><Badge tone={c.status==='Ativa'?'green':c.status==='Programada'?'violet':'gray'}>{c.status}</Badge>{onToggle&&<><Button className="primary" onClick={()=>onSend?.(c)}><Send size={16}/> Enviar agora</Button><Button onClick={()=>onToggle(c)}>{c.status==='Ativa'?<Pause size={16}/>:<Play size={16}/>}</Button><Button onClick={()=>onDelete(c)}><Trash2 size={16}/></Button></>}<MoreVertical size={18}/></div></div>)}</div>;
 }
 
 function Customers({ data, setData, lojaId, refreshData }) {
@@ -291,7 +311,7 @@ function Capture({ loja, data, setData, refreshData, user }){
     try {
       setLoading(true);
       setStatus('Solicitando permissão do navegador...');
-      const result = await requestPushSubscription(`${loja.id}:${user?.id || 'usuario'}`);
+      const result = await requestPushSubscription(`${loja.id}:${user?.id || 'usuario'}`, loja.id);
       if (result.permission !== 'granted') {
         setStatus('Permissão negada. Autorize as notificações no navegador para testar.');
         return;
