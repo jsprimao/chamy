@@ -19,6 +19,48 @@ function Logo({ compact = false }) { return <div className={compact ? 'brand com
 function normalizePlan(plan = 'gratis') { return String(plan).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
 function nicePlan(plan = 'gratis') { return plans[normalizePlan(plan)]?.label || plan || 'Grátis'; }
 
+
+function parsePct(rate) {
+  if (typeof rate === 'number') return rate;
+  const n = Number(String(rate || '0').replace('%','').replace(',','.'));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function getPlanLimits(planKey = 'gratis') {
+  const key = normalizePlan(planKey);
+  if (key === 'business') return { subscribers: 10000, campaigns: null, label: 'Business' };
+  if (key === 'pro') return { subscribers: 1000, campaigns: null, label: 'Pro' };
+  return { subscribers: 100, campaigns: 20, label: 'Grátis' };
+}
+
+function calculateAnalytics(data, user) {
+  const customers = data?.customers || [];
+  const campaigns = data?.campaigns || [];
+  const totalSent = campaigns.reduce((sum, campaign) => sum + Number(campaign.sent || 0), 0);
+  const totalClicks = campaigns.reduce((sum, campaign) => sum + Number(campaign.clicks || 0), 0);
+  const ctr = totalSent ? Math.round((totalClicks / totalSent) * 100) : 0;
+  const bestCampaign = [...campaigns].sort((a, b) => {
+    const bScore = Number(b.clicks || 0) * 1000 + Number(b.sent || 0);
+    const aScore = Number(a.clicks || 0) * 1000 + Number(a.sent || 0);
+    return bScore - aScore;
+  })[0] || null;
+  const planLimits = getPlanLimits(user?.plan || 'gratis');
+  const subscribersUsed = customers.length;
+  const campaignsUsed = campaigns.length;
+  const subscriberPct = Math.min(100, Math.round((subscribersUsed / planLimits.subscribers) * 100));
+  const campaignPct = planLimits.campaigns ? Math.min(100, Math.round((campaignsUsed / planLimits.campaigns) * 100)) : 100;
+  const now = Date.now();
+  const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
+  const monthAgo = now - 30 * 24 * 60 * 60 * 1000;
+  const newThisWeek = customers.filter(c => c.createdAt && new Date(c.createdAt).getTime() >= weekAgo).length;
+  const newThisMonth = customers.filter(c => c.createdAt && new Date(c.createdAt).getTime() >= monthAgo).length;
+  return { totalSent, totalClicks, ctr, bestCampaign, planLimits, subscribersUsed, campaignsUsed, subscriberPct, campaignPct, newThisWeek, newThisMonth };
+}
+
+function ProgressLine({ label, value, limit, pct }) {
+  return <div className="usageLine"><div><span>{label}</span><b>{limit ? `${value} / ${limit.toLocaleString('pt-BR')}` : `${value} / ilimitado`}</b></div><div className="bar"><i style={{width:`${pct}%`}} /></div></div>;
+}
+
 const oneSignalAppId = import.meta.env.VITE_ONESIGNAL_APP_ID || '';
 let oneSignalInitPromise = null;
 
@@ -275,14 +317,57 @@ function SidebarValueCard({ user, data, setActive }) {
 }
 
 function Dashboard({ data, user, setActive }) {
-  const sent = data.campaigns.reduce((a,c)=>a+(Number(c.sent)||0),0), clicks = data.campaigns.reduce((a,c)=>a+(Number(c.clicks)||0),0);
+  const analytics = calculateAnalytics(data, user);
   const plan = plans[normalizePlan(user.plan)] || plans.gratis;
-  const used = data.customers.length;
-  const pct = Math.min(100, Math.round((used / plan.limit) * 100));
+  const best = analytics.bestCampaign;
+  const bestTitle = best ? best.title : 'Nenhuma campanha enviada';
+  const bestSubtitle = best ? `${Number(best.sent || 0)} envios • ${Number(best.clicks || 0)} cliques • ${best.rate || '0%'}` : 'Envie uma campanha para gerar métricas.';
+
   return <>
-    <div className="welcome"><div><Rocket/><h2>Bem-vindo de volta! 👋</h2><p>Veja o desempenho das suas campanhas e engaje ainda mais seus clientes.</p></div><Button onClick={() => setActive('camp')}><Send size={17}/> Criar campanha</Button></div>
-    <div className="stats"><Stat Icon={Users} label="Inscritos" value={used} change="dados reais"/><Stat Icon={Send} label="Campanhas" value={data.campaigns.length} change="no banco" color="blue"/><Stat Icon={MousePointerClick} label="Cliques" value={clicks.toLocaleString('pt-BR')} change="em breve" color="green"/><Stat Icon={ShoppingCart} label="Envios" value={sent.toLocaleString('pt-BR')} change="em breve" color="orange"/></div>
-    <div className="dashGrid"><Card className="chart"><div className="cardHead"><h3>Desempenho</h3><select><option>Últimos 30 dias</option></select></div><div className="fakeChart"><svg viewBox="0 0 900 260" preserveAspectRatio="none"><path d="M0,230 C120,130 180,80 280,85 C420,90 450,125 560,100 C700,70 760,35 900,25" fill="none" stroke="#6d28d9" strokeWidth="5"/><path d="M0,250 C130,180 230,200 330,150 C470,130 520,175 640,130 C760,80 820,130 900,90" fill="none" stroke="#fb8500" strokeWidth="5"/><path d="M0,260 C120,170 180,110 280,115 C420,120 450,155 560,130 C700,100 760,65 900,55 L900,260 Z" fill="url(#g)"/><defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop stopColor="#7c3aed55"/><stop offset="1" stopColor="#fff0"/></linearGradient></defs></svg></div></Card><Card className="planBox"><div className="cardHead"><h3>Seu plano atual</h3><Badge>{plan.label}</Badge></div><h2>{used} <small>/ {plan.limit.toLocaleString('pt-BR')}</small></h2><p>inscritos utilizados</p><div className="bar"><i style={{width:`${pct}%`}} /></div><small>{pct}% utilizado</small><Button>Gerenciar plano</Button></Card></div>
+    <div className="welcome"><div><Rocket/><h2>Bem-vindo de volta! 👋</h2><p>Veja resultados reais das suas campanhas e acompanhe o crescimento da sua loja.</p></div><Button onClick={() => setActive('camp')}><Send size={17}/> Criar campanha</Button></div>
+
+    <div className="stats">
+      <Stat Icon={Users} label="Inscritos" value={analytics.subscribersUsed} change="dados reais" />
+      <Stat Icon={Send} label="Campanhas" value={analytics.campaignsUsed} change="no banco" color="blue" />
+      <Stat Icon={ShoppingCart} label="Envios" value={analytics.totalSent.toLocaleString('pt-BR')} change="registrados" color="orange" />
+      <Stat Icon={MousePointerClick} label="Cliques" value={analytics.totalClicks.toLocaleString('pt-BR')} change={`${analytics.ctr}% de CTR`} color="green" />
+    </div>
+
+    <div className="dashGrid enhanced">
+      <Card className="chart">
+        <div className="cardHead"><h3>Desempenho real</h3><select><option>Últimos 30 dias</option></select></div>
+        <div className="realPerformance">
+          <div className="performanceNumber"><b>{analytics.totalSent}</b><span>envios registrados</span></div>
+          <div className="performanceNumber"><b>{analytics.totalClicks}</b><span>cliques registrados</span></div>
+          <div className="performanceNumber"><b>{analytics.ctr}%</b><span>taxa de clique</span></div>
+        </div>
+        <div className="fakeChart"><svg viewBox="0 0 900 260" preserveAspectRatio="none"><path d="M0,230 C120,130 180,80 280,85 C420,90 450,125 560,100 C700,70 760,35 900,25" fill="none" stroke="#6d28d9" strokeWidth="5"/><path d="M0,250 C130,180 230,200 330,150 C470,130 520,175 640,130 C760,80 820,130 900,90" fill="none" stroke="#fb8500" strokeWidth="5"/><path d="M0,260 C120,170 180,110 280,115 C420,120 450,155 560,130 C700,100 760,65 900,55 L900,260 Z" fill="url(#g)"/><defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop stopColor="#7c3aed55"/><stop offset="1" stopColor="#fff0"/></linearGradient></defs></svg></div>
+      </Card>
+
+      <div className="valueStack">
+        <Card className="accountPanel">
+          <div className="cardHead"><h3>Resumo da Conta</h3><Badge>{plan.label}</Badge></div>
+          <ProgressLine label="Inscritos" value={analytics.subscribersUsed} limit={analytics.planLimits.subscribers} pct={analytics.subscriberPct} />
+          <ProgressLine label="Campanhas" value={analytics.campaignsUsed} limit={analytics.planLimits.campaigns} pct={analytics.campaignPct} />
+          <p className="miniInfo">Status: <b>{user.status || 'ativo'}</b></p>
+          <Button onClick={() => setActive('reports')}>Ver Relatórios</Button>
+        </Card>
+
+        <Card className="bestPanel">
+          <small>🏆 Melhor campanha do mês</small>
+          <h3>{bestTitle}</h3>
+          <p>{bestSubtitle}</p>
+        </Card>
+
+        <Card className="growthPanel">
+          <small>📈 Crescimento</small>
+          <p><b>+{analytics.newThisWeek}</b> inscritos esta semana</p>
+          <p><b>+{analytics.newThisMonth}</b> inscritos este mês</p>
+          <em>💡 Use títulos curtos e envie campanhas nos horários de maior movimento.</em>
+        </Card>
+      </div>
+    </div>
+
     <Card><div className="cardHead"><h3>Campanhas recentes</h3><Button onClick={() => setActive('camp')}>Ver todas</Button></div><CampaignList data={data}/></Card>
   </>;
 }
@@ -415,12 +500,37 @@ function Capture({ loja, data, setData, refreshData, user }){
   return <div className="campaignPage"><Card><h3>Widget de captura</h3><p className="muted">Mensagem exibida para visitantes aceitarem receber notificações.</p><label>Título</label><input defaultValue="Receba promoções e novidades"/><label>Mensagem</label><textarea defaultValue="Quer ser avisado quando chegarem ofertas e produtos novos?"/><div className="two"><Button className="primary" onClick={activatePush} disabled={loading}><Bell size={17}/> {loading ? 'Ativando...' : 'Ativar notificações neste navegador'}</Button><Button onClick={testLocal}><Play size={17}/> Teste local</Button></div><p className="authMessage">{status}</p><Button onClick={()=>navigator.clipboard?.writeText(widgetCode)}><Copy size={17}/> Copiar código do widget</Button><pre>{widgetCode}</pre><p className="muted">Observação: o widget público será a próxima etapa. Nesta versão, o botão acima registra seu navegador para teste real com OneSignal.</p></Card><Card className="preview"><Globe/><div className="popup"><Bell/><h3>Receba promoções e novidades</h3><p>Quer ser avisado quando chegarem ofertas e produtos novos?</p><div className="two"><Button className="primary" onClick={activatePush}>Sim, quero</Button><Button>Agora não</Button></div></div></Card></div>}
 
 function Plans(){return <div className="plans">{Object.values(plans).map((p,i)=><Card className={i===1?'featured':''} key={p.label}><Badge tone={i===1?'violet':'gray'}>{p.badge}</Badge><h2>{p.label}</h2><h1>{p.price}<small>/mês</small></h1>{p.features.map(f=><p className="ok" key={f}><CheckCircle2/> {f}</p>)}<Button className="primary">Escolher plano</Button></Card>)}</div>}
-function Reports(){return <><div className="stats"><Stat Icon={TrendingUp} label="Melhor campanha" value="Promoção" change="em breve"/><Stat Icon={Bell} label="Melhor horário" value="09h" change="em breve" color="blue"/><Stat Icon={Users} label="Melhor público" value="Promoções" change="em breve" color="green"/></div><Card><h3>Desempenho por campanha</h3><div className="bars"><p>Promoção Relâmpago <i style={{width:'85%'}} /></p><p>Novidades da Semana <i style={{width:'55%'}} /></p><p>Cliente Sumido <i style={{width:'35%'}} /></p></div></Card></>}
+function Reports({ data, user }){
+  const analytics = calculateAnalytics(data, user);
+  const best = analytics.bestCampaign;
+  const ordered = [...(data.campaigns || [])].sort((a,b)=>Number(b.sent || 0) - Number(a.sent || 0));
+  return <>
+    <div className="stats">
+      <Stat Icon={TrendingUp} label="Melhor campanha" value={best ? best.title.slice(0,18) : 'Sem dados'} change={best ? `${best.sent} envios` : 'envie uma campanha'} />
+      <Stat Icon={Bell} label="Envios totais" value={analytics.totalSent.toLocaleString('pt-BR')} change="dados reais" color="blue" />
+      <Stat Icon={MousePointerClick} label="Taxa de clique" value={`${analytics.ctr}%`} change={`${analytics.totalClicks} cliques`} color="green" />
+    </div>
+    <Card>
+      <div className="cardHead"><h3>Desempenho real por campanha</h3><Badge>{ordered.length} campanhas</Badge></div>
+      {!ordered.length ? <p className="muted">Nenhuma campanha encontrada.</p> : <div className="reportRows">
+        {ordered.map(c => {
+          const sent = Number(c.sent || 0);
+          const pct = Math.max(4, Math.min(100, sent ? sent * 10 : 4));
+          return <div className="reportRow" key={c.id}>
+            <div><b>{c.title}</b><small>{sent} envios • {Number(c.clicks || 0)} cliques • {c.rate || '0%'}</small></div>
+            <i style={{width:`${pct}%`}} />
+          </div>;
+        })}
+      </div>}
+    </Card>
+    <Card className="tipsCard"><h3>O que estes dados mostram?</h3><p>Envios vêm da tabela <b>envios</b>, inscritos vêm da tabela <b>clientes</b> e campanhas vêm da tabela <b>campanhas</b>. Assim o vendedor passa a enxergar o resultado real das notificações enviadas.</p></Card>
+  </>;
+}
 function SettingsPanel({ loja }){return <Card><h3>Configurações</h3><label>Nome da loja</label><input defaultValue={loja?.nome || ''}/><label>Site ou catálogo</label><input defaultValue={loja?.site || ''}/><p className="ok"><ShieldCheck/> Permissão e descadastro serão controlados automaticamente.</p><Button className="primary">Salvar configurações</Button></Card>}
 
 function Seller({ user, setUser, data, setData, loja, refreshData }) {
   const [active,setActive]=useState('dash');
-  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={sellerMenu} data={data}>{active==='dash'&&<Dashboard data={data} user={user} setActive={setActive}/>} {active==='camp'&&<Campaigns data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData}/>} {active==='auto'&&<Automations/>} {active==='clients'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData}/>} {active==='capture'&&<Capture loja={loja} data={data} setData={setData} refreshData={refreshData} user={user}/>} {active==='segments'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData}/>} {active==='reports'&&<Reports/>} {active==='store'&&<SettingsPanel loja={loja}/>} {active==='plans'&&<Plans/>} {active==='config'&&<SettingsPanel loja={loja}/>}</Shell>;
+  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={sellerMenu} data={data}>{active==='dash'&&<Dashboard data={data} user={user} setActive={setActive}/>} {active==='camp'&&<Campaigns data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData}/>} {active==='auto'&&<Automations/>} {active==='clients'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData}/>} {active==='capture'&&<Capture loja={loja} data={data} setData={setData} refreshData={refreshData} user={user}/>} {active==='segments'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData}/>} {active==='reports'&&<Reports data={data} user={user}/>} {active==='store'&&<SettingsPanel loja={loja}/>} {active==='plans'&&<Plans/>} {active==='config'&&<SettingsPanel loja={loja}/>}</Shell>;
 }
 
 function Admin({ user, setUser, data, setData, refreshData }) {
@@ -480,7 +590,7 @@ function App(){
           if (!enviosError) envios = enviosData || [];
         }
         setData(prev => ({...prev,
-          customers: (clientes || []).map((c) => ({ id: c.id, name: c.nome || 'Cliente', city: c.cidade || '', whats: c.whatsapp || '', interest: c.interesse || 'Todos', status: c.status || 'ativo', last: 'Supabase', device: c.aceitou_push ? 'Push ativo' : 'Sem push' })),
+          customers: (clientes || []).map((c) => ({ id: c.id, name: c.nome || 'Cliente', city: c.cidade || '', whats: c.whatsapp || '', interest: c.interesse || 'Todos', status: c.status || 'ativo', last: c.created_at ? new Date(c.created_at).toLocaleDateString('pt-BR') : 'Supabase', createdAt: c.created_at, device: c.aceitou_push ? 'Push ativo' : 'Sem push', oneSignalSubscriptionId: c.onesignal_subscription_id || '' })),
           campaigns: (campanhas || []).map((c) => {
             const rows = envios.filter(e => e.campanha_id === c.id);
             const sent = rows.length;
