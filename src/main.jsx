@@ -341,7 +341,12 @@ function Dashboard({ data, user, setActive }) {
           <div className="performanceNumber"><b>{analytics.totalClicks}</b><span>cliques registrados</span></div>
           <div className="performanceNumber"><b>{analytics.ctr}%</b><span>taxa de clique</span></div>
         </div>
-        <div className="fakeChart"><svg viewBox="0 0 900 260" preserveAspectRatio="none"><path d="M0,230 C120,130 180,80 280,85 C420,90 450,125 560,100 C700,70 760,35 900,25" fill="none" stroke="#6d28d9" strokeWidth="5"/><path d="M0,250 C130,180 230,200 330,150 C470,130 520,175 640,130 C760,80 820,130 900,90" fill="none" stroke="#fb8500" strokeWidth="5"/><path d="M0,260 C120,170 180,110 280,115 C420,120 450,155 560,130 C700,100 760,65 900,55 L900,260 Z" fill="url(#g)"/><defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop stopColor="#7c3aed55"/><stop offset="1" stopColor="#fff0"/></linearGradient></defs></svg></div>
+        <div className="realMetricGrid">
+          <div><small>Novos inscritos</small><b>+{analytics.newThisMonth}</b><span>últimos 30 dias</span></div>
+          <div><small>Campanhas criadas</small><b>{analytics.campaignsUsed}</b><span>no período atual</span></div>
+          <div><small>Melhor campanha</small><b>{best ? best.title : 'Sem dados'}</b><span>{best ? `${Number(best.sent || 0)} envios • ${Number(best.clicks || 0)} cliques` : 'envie uma campanha'}</span></div>
+          <div><small>Uso do plano</small><b>{analytics.subscriberPct}%</b><span>{analytics.subscribersUsed} de {analytics.planLimits.subscribers.toLocaleString('pt-BR')} inscritos</span></div>
+        </div>
       </Card>
 
       <div className="valueStack">

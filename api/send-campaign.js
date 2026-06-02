@@ -71,31 +71,16 @@ export default async function handler(req, res) {
 
     if (clientsError) return json(res, 400, { ok: false, error: clientsError.message, debug });
 
-    const subscriptionIds = (clients || [])
-      .map((client) => client.onesignal_subscription_id)
-      .filter(Boolean);
+    const pushClients = (clients || [])
+      .map((client) => ({ id: client.id, subscriptionId: client.onesignal_subscription_id }))
+      .filter((client) => Boolean(client.subscriptionId));
+
+    const subscriptionIds = pushClients.map((client) => client.subscriptionId);
 
     debug.pushClientsInSupabase = clients?.length || 0;
     debug.oneSignalSubscriptionIds = subscriptionIds.length;
 
-    const payload = {
-      app_id: oneSignalAppId,
-      headings: { en: campaign.titulo || 'Chamy', pt: campaign.titulo || 'Chamy' },
-      contents: { en: campaign.mensagem || 'Você tem uma novidade.', pt: campaign.mensagem || 'Você tem uma novidade.' },
-      url: campaign.link || undefined,
-      chrome_web_icon: `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}/favicon.png`,
-      chrome_web_badge: `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}/favicon.png`,
-      data: {
-        campaign_id: campaign.id,
-        loja_id: campaign.loja_id,
-        chamy: true,
-        mode: subscriptionIds.length ? 'include_subscription_ids' : 'no_subscription_ids'
-      }
-    };
-
-    if (subscriptionIds.length) {
-      payload.include_subscription_ids = subscriptionIds;
-    } else {
+    if (!pushClients.length) {
       return json(res, 400, {
         ok: false,
         error: 'Nenhum cliente possui onesignal_subscription_id salvo. Vá em Captura Push e ative as notificações novamente neste navegador.',
@@ -104,34 +89,65 @@ export default async function handler(req, res) {
     }
 
     debug.step = 'enviando para OneSignal';
-    debug.oneSignalPayloadMode = 'include_subscription_ids';
+    debug.oneSignalPayloadMode = 'individual_click_tracking';
 
-    const response = await fetch('https://onesignal.com/api/v1/notifications', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json; charset=utf-8',
-        Authorization: `Basic ${oneSignalRestKey}`
-      },
-      body: JSON.stringify(payload)
-    });
+    const origin = `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}`;
+    const defaultTarget = campaign.link || origin;
+    const sentClients = [];
+    const oneSignalResults = [];
 
-    const raw = await response.text();
-    let oneSignalResult = {};
-    try { oneSignalResult = raw ? JSON.parse(raw) : {}; } catch (_) { oneSignalResult = { raw }; }
-    debug.oneSignalStatus = response.status;
-    debug.oneSignalResponse = oneSignalResult;
+    for (const client of pushClients) {
+      const clickUrl = `${origin}/api/click?campaign_id=${encodeURIComponent(campaign.id)}&cliente_id=${encodeURIComponent(client.id)}&to=${encodeURIComponent(defaultTarget)}`;
+      const payload = {
+        app_id: oneSignalAppId,
+        headings: { en: campaign.titulo || 'Chamy', pt: campaign.titulo || 'Chamy' },
+        contents: { en: campaign.mensagem || 'Você tem uma novidade.', pt: campaign.mensagem || 'Você tem uma novidade.' },
+        url: clickUrl,
+        chrome_web_icon: `${origin}/favicon.png`,
+        chrome_web_badge: `${origin}/favicon.png`,
+        include_subscription_ids: [client.subscriptionId],
+        data: {
+          campaign_id: campaign.id,
+          cliente_id: client.id,
+          loja_id: campaign.loja_id,
+          chamy: true,
+          tracking: 'v9'
+        }
+      };
 
-    if (!response.ok) {
+      const response = await fetch('https://onesignal.com/api/v1/notifications', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          Authorization: `Basic ${oneSignalRestKey}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const raw = await response.text();
+      let result = {};
+      try { result = raw ? JSON.parse(raw) : {}; } catch (_) { result = { raw }; }
+      oneSignalResults.push({ status: response.status, result, clientId: client.id });
+
+      if (response.ok) {
+        sentClients.push(client);
+      }
+    }
+
+    debug.oneSignalStatus = oneSignalResults.some(r => r.status >= 400) ? 'partial_error' : 200;
+    debug.oneSignalResponse = oneSignalResults;
+
+    if (!sentClients.length) {
       return json(res, 400, {
         ok: false,
-        error: oneSignalResult.errors?.[0] || oneSignalResult.error || 'Erro no envio OneSignal.',
+        error: oneSignalResults?.[0]?.result?.errors?.[0] || oneSignalResults?.[0]?.result?.error || 'Nenhuma notificação foi aceita pelo OneSignal.',
         debug
       });
     }
 
     debug.step = 'registrando envios';
-    if (clients?.length) {
-      const rows = clients.map((client) => ({
+    if (sentClients?.length) {
+      const rows = sentClients.map((client) => ({
         campanha_id: campaign.id,
         cliente_id: client.id,
         recebido: true,
@@ -155,12 +171,12 @@ export default async function handler(req, res) {
     return json(res, 200, {
       ok: true,
       message: 'Campanha processada pela API do Chamy.',
-      notificationId: oneSignalResult.id || null,
-      recipients: oneSignalResult.recipients ?? subscriptionIds.length ?? 0,
+      notificationId: oneSignalResults?.[0]?.result?.id || null,
+      recipients: sentClients.length,
       supabasePushClients: clients?.length || 0,
       enviosInserted: debug.enviosInserted,
       enviosError: debug.enviosError,
-      oneSignal: oneSignalResult,
+      oneSignal: oneSignalResults,
       debug
     });
   } catch (error) {
