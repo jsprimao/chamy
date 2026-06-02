@@ -531,11 +531,119 @@ function Reports({ data, user }){
     <Card className="tipsCard"><h3>O que estes dados mostram?</h3><p>Envios vêm da tabela <b>envios</b>, inscritos vêm da tabela <b>clientes</b> e campanhas vêm da tabela <b>campanhas</b>. Assim o vendedor passa a enxergar o resultado real das notificações enviadas.</p></Card>
   </>;
 }
-function SettingsPanel({ loja }){return <Card><h3>Configurações</h3><label>Nome da loja</label><input defaultValue={loja?.nome || ''}/><label>Site ou catálogo</label><input defaultValue={loja?.site || ''}/><p className="ok"><ShieldCheck/> Permissão e descadastro serão controlados automaticamente.</p><Button className="primary">Salvar configurações</Button></Card>}
+function StorePanel({ loja, refreshData }){
+  const [form, setForm] = useState({
+    nome: loja?.nome || '',
+    site: loja?.site || '',
+    whatsapp: loja?.whatsapp || '',
+    cidade: loja?.cidade || ''
+  });
+  const [msg, setMsg] = useState('');
+  const slug = (loja?.nome || 'minha-loja').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'') || loja?.id || 'minha-loja';
+  const publicLink = `${window.location.origin}/loja/${slug}`;
+  const widgetCode = `<script src="${window.location.origin}/widget.js" data-loja="${loja?.id || 'ID_DA_LOJA'}"></script>`;
+  useEffect(()=>{ setForm({ nome: loja?.nome || '', site: loja?.site || '', whatsapp: loja?.whatsapp || '', cidade: loja?.cidade || '' }); }, [loja?.id]);
+  async function save(){
+    if (!loja?.id) return setMsg('Nenhuma loja vinculada ao usuário.');
+    setMsg('Salvando dados da loja...');
+    const { error } = await supabase.from('lojas').update({ nome: form.nome, site: form.site, whatsapp: form.whatsapp, cidade: form.cidade }).eq('id', loja.id);
+    if (error) return setMsg(error.message);
+    setMsg('Dados da loja salvos com sucesso.');
+    refreshData?.();
+  }
+  return <div className="storeGrid">
+    <Card>
+      <div className="cardHead"><h3>Dados da Loja</h3><Badge tone={loja?.status === 'ativa' ? 'green' : 'gray'}>{loja?.status || 'ativa'}</Badge></div>
+      <label>Nome da loja</label><input value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} placeholder="Nome da sua loja" />
+      <label>Site ou catálogo</label><input value={form.site} onChange={e=>setForm({...form,site:e.target.value})} placeholder="https://sualoja.com.br" />
+      <div className="two"><div><label>WhatsApp</label><input value={form.whatsapp} onChange={e=>setForm({...form,whatsapp:e.target.value})} placeholder="(12) 99999-9999" /></div><div><label>Cidade/UF</label><input value={form.cidade} onChange={e=>setForm({...form,cidade:e.target.value})} placeholder="Aparecida/SP" /></div></div>
+      {msg && <p className="authMessage">{msg}</p>}
+      <Button className="primary" onClick={save}>Salvar dados da loja</Button>
+    </Card>
+    <Card>
+      <div className="cardHead"><h3>Link público e instalação</h3><Store size={22}/></div>
+      <p className="muted">Use estes dados para divulgar a captura de inscritos da loja.</p>
+      <label>Link público da loja</label><div className="copyBox"><code>{publicLink}</code><Button onClick={()=>navigator.clipboard?.writeText(publicLink)}><Copy size={16}/> Copiar</Button></div>
+      <label>Código do widget</label><pre>{widgetCode}</pre>
+      <Button onClick={()=>navigator.clipboard?.writeText(widgetCode)}><Copy size={16}/> Copiar widget</Button>
+      <div className="qrPlaceholder"><Globe/><b>QR Code da loja</b><span>Este espaço será usado na próxima etapa para gerar o QR Code público de inscrição.</span></div>
+    </Card>
+  </div>;
+}
+
+function ConfigPanel({ user, setUser }){
+  const [name, setName] = useState(user?.name || '');
+  const [msg, setMsg] = useState('');
+  async function saveProfile(){
+    if (!user?.id) return;
+    setMsg('Salvando perfil...');
+    const { error } = await supabase.from('profiles').update({ nome: name }).eq('id', user.id);
+    if (error) return setMsg(error.message);
+    setUser({...user, name});
+    setMsg('Perfil atualizado com sucesso.');
+  }
+  async function resetPassword(){
+    if (!user?.email) return;
+    const { error } = await supabase.auth.resetPasswordForEmail(user.email, { redirectTo: window.location.origin });
+    setMsg(error ? error.message : 'Link de recuperação enviado para seu e-mail.');
+  }
+  return <div className="storeGrid">
+    <Card>
+      <div className="cardHead"><h3>Perfil do Usuário</h3><Badge>{user.role === 'admin' ? 'Admin' : 'Vendedor'}</Badge></div>
+      <label>Nome</label><input value={name} onChange={e=>setName(e.target.value)} />
+      <label>E-mail</label><input value={user.email || ''} disabled />
+      <label>Plano atual</label><input value={nicePlan(user.plan)} disabled />
+      {msg && <p className="authMessage">{msg}</p>}
+      <div className="two"><Button className="primary" onClick={saveProfile}>Salvar perfil</Button><Button onClick={resetPassword}><Lock size={16}/> Alterar senha</Button></div>
+    </Card>
+    <Card>
+      <div className="cardHead"><h3>Preferências e Segurança</h3><ShieldCheck size={22}/></div>
+      <p className="ok"><ShieldCheck/> Login protegido pelo Supabase Auth.</p>
+      <p className="ok"><Bell/> Notificações controladas com permissão do navegador.</p>
+      <p className="ok"><Crown/> Recursos liberados de acordo com o plano.</p>
+      <div className="settingsList">
+        <p><span>Status da conta</span><b>{user.status || 'ativo'}</b></p>
+        <p><span>Tipo de acesso</span><b>{user.role === 'admin' ? 'Administrador' : 'Vendedor'}</b></p>
+        <p><span>Ambiente</span><b>Produção</b></p>
+      </div>
+    </Card>
+  </div>;
+}
+
+function Segments({ data }){
+  const customers = data?.customers || [];
+  const map = new Map();
+  customers.forEach(c => {
+    const key = (c.interest || 'Todos').trim() || 'Todos';
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(c);
+  });
+  if (!map.has('Todos')) map.set('Todos', customers);
+  const segments = Array.from(map.entries()).map(([name, rows]) => ({ name, count: rows.length, push: rows.filter(c => c.device === 'Push ativo' || c.oneSignalSubscriptionId).length, cities: [...new Set(rows.map(r=>r.city).filter(Boolean))].slice(0,3).join(', ') || 'Sem cidade' })).sort((a,b)=> (b.name === 'Todos' ? -1 : 0) || b.count - a.count);
+  return <div className="segmentPage">
+    <Card>
+      <div className="cardHead"><div><h3>Segmentos</h3><p className="muted">Grupos calculados a partir do campo interesse dos inscritos.</p></div><Badge>{segments.length} segmentos</Badge></div>
+      <div className="segmentGrid">
+        {segments.map(seg => <div className="segmentCard" key={seg.name}>
+          <div><TargetIcon/><b>{seg.name}</b></div>
+          <h2>{seg.count}</h2>
+          <p>inscritos no segmento</p>
+          <small>{seg.push} com push ativo • {seg.cities}</small>
+        </div>)}
+      </div>
+    </Card>
+    <Card className="tipsCard">
+      <h3>Como usar segmentos?</h3>
+      <p>Na tela <b>Inscritos</b>, cada cliente possui um interesse. Esse interesse vira um segmento para campanhas mais direcionadas, como Promoções, Novidades, VIP, Atacado ou Clientes inativos.</p>
+      <p>Na criação de campanhas, escolha o público desejado para enviar mensagens mais relevantes e melhorar a taxa de clique.</p>
+    </Card>
+  </div>;
+}
+function TargetIcon(){ return <Users size={20}/>; }
 
 function Seller({ user, setUser, data, setData, loja, refreshData }) {
   const [active,setActive]=useState('dash');
-  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={sellerMenu} data={data}>{active==='dash'&&<Dashboard data={data} user={user} setActive={setActive}/>} {active==='camp'&&<Campaigns data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData}/>} {active==='auto'&&<Automations/>} {active==='clients'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData}/>} {active==='capture'&&<Capture loja={loja} data={data} setData={setData} refreshData={refreshData} user={user}/>} {active==='segments'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData}/>} {active==='reports'&&<Reports data={data} user={user}/>} {active==='store'&&<SettingsPanel loja={loja}/>} {active==='plans'&&<Plans/>} {active==='config'&&<SettingsPanel loja={loja}/>}</Shell>;
+  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={sellerMenu} data={data}>{active==='dash'&&<Dashboard data={data} user={user} setActive={setActive}/>} {active==='camp'&&<Campaigns data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData}/>} {active==='auto'&&<Automations/>} {active==='clients'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData}/>} {active==='capture'&&<Capture loja={loja} data={data} setData={setData} refreshData={refreshData} user={user}/>} {active==='segments'&&<Segments data={data}/>} {active==='reports'&&<Reports data={data} user={user}/>} {active==='store'&&<StorePanel loja={loja} refreshData={refreshData}/>} {active==='plans'&&<Plans/>} {active==='config'&&<ConfigPanel user={user} setUser={setUser}/>}</Shell>;
 }
 
 function Admin({ user, setUser, data, setData, refreshData }) {
@@ -543,7 +651,7 @@ function Admin({ user, setUser, data, setData, refreshData }) {
   async function addVendor(){
     alert('Por segurança, crie vendedores pelo cadastro normal ou em Authentication > Users. Depois eles aparecerão aqui.');
   }
-  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={adminMenu} data={data}>{active==='dash'&&<><div className="stats"><Stat Icon={Store} label="Vendedores" value={data.vendors.length} change="dados reais"/><Stat Icon={Users} label="Inscritos totais" value={data.vendors.reduce((a,v)=>a+(Number(v.subscribers)||0),0).toLocaleString('pt-BR')} change="em todas as lojas" color="blue"/><Stat Icon={CreditCard} label="Planos pagos" value={data.vendors.filter(v=>normalizePlan(v.plan)!=='gratis').length} change="Pro/Business" color="green"/><Stat Icon={TrendingUp} label="MRR estimado" value={`R$ ${data.vendors.reduce((a,v)=>a+(normalizePlan(v.plan)==='pro'?39:normalizePlan(v.plan)==='business'?149:0),0)}`} change="base atual" color="orange"/></div><Card><div className="cardHead"><h3>Vendedores recentes</h3><Button onClick={refreshData}>Atualizar</Button></div><Table rows={data.vendors} cols={['name','email','plan','status','subscribers','campaigns','sales']}/></Card></>} {active==='vendors'&&<Card><div className="cardHead"><h3>Vendedores / usuários</h3><Button className="primary" onClick={addVendor}><Plus size={17}/> Adicionar</Button></div><Table rows={data.vendors} cols={['name','email','plan','status','subscribers','campaigns','sales']}/></Card>} {active==='plans'&&<Plans/>} {active==='global'&&<Card><h3>Campanha global para vendedores</h3><input defaultValue="Novidade no Chamy"/><textarea defaultValue="Agora você pode criar campanhas automáticas em poucos cliques."/><Button className="primary"><Send size={17}/> Enviar aviso geral</Button></Card>} {active==='support'&&<Card><h3>Chamados</h3><Table rows={data.tickets} cols={['vendor','subject','status']}/></Card>} {active==='settings'&&<SettingsPanel/>}</Shell>;
+  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={adminMenu} data={data}>{active==='dash'&&<><div className="stats"><Stat Icon={Store} label="Vendedores" value={data.vendors.length} change="dados reais"/><Stat Icon={Users} label="Inscritos totais" value={data.vendors.reduce((a,v)=>a+(Number(v.subscribers)||0),0).toLocaleString('pt-BR')} change="em todas as lojas" color="blue"/><Stat Icon={CreditCard} label="Planos pagos" value={data.vendors.filter(v=>normalizePlan(v.plan)!=='gratis').length} change="Pro/Business" color="green"/><Stat Icon={TrendingUp} label="MRR estimado" value={`R$ ${data.vendors.reduce((a,v)=>a+(normalizePlan(v.plan)==='pro'?39:normalizePlan(v.plan)==='business'?149:0),0)}`} change="base atual" color="orange"/></div><Card><div className="cardHead"><h3>Vendedores recentes</h3><Button onClick={refreshData}>Atualizar</Button></div><Table rows={data.vendors} cols={['name','email','plan','status','subscribers','campaigns','sales']}/></Card></>} {active==='vendors'&&<Card><div className="cardHead"><h3>Vendedores / usuários</h3><Button className="primary" onClick={addVendor}><Plus size={17}/> Adicionar</Button></div><Table rows={data.vendors} cols={['name','email','plan','status','subscribers','campaigns','sales']}/></Card>} {active==='plans'&&<Plans/>} {active==='global'&&<Card><h3>Campanha global para vendedores</h3><input defaultValue="Novidade no Chamy"/><textarea defaultValue="Agora você pode criar campanhas automáticas em poucos cliques."/><Button className="primary"><Send size={17}/> Enviar aviso geral</Button></Card>} {active==='support'&&<Card><h3>Chamados</h3><Table rows={data.tickets} cols={['vendor','subject','status']}/></Card>} {active==='settings'&&<ConfigPanel user={user} setUser={setUser}/>}</Shell>;
 }
 
 function Table({ rows, cols }) {
