@@ -64,23 +64,24 @@ export default async function handler(req, res) {
     debug.step = 'buscando clientes push';
     const { data: clients, error: clientsError } = await supabase
       .from('clientes')
-      .select('id')
+      .select('id, onesignal_subscription_id')
       .eq('loja_id', campaign.loja_id)
       .eq('aceitou_push', true)
       .eq('status', 'ativo');
 
     if (clientsError) return json(res, 400, { ok: false, error: clientsError.message, debug });
 
-    debug.pushClientsInSupabase = clients?.length || 0;
+    const subscriptionIds = (clients || [])
+      .map((client) => client.onesignal_subscription_id)
+      .filter(Boolean);
 
-    // MVP v5: envio para todos os inscritos do app OneSignal.
-    // Motivo: garante teste real enquanto validamos tags/segmentos por loja.
-    // Próxima etapa: segmentar por tag loja_id de forma definitiva.
+    debug.pushClientsInSupabase = clients?.length || 0;
+    debug.oneSignalSubscriptionIds = subscriptionIds.length;
+
     const payload = {
       app_id: oneSignalAppId,
       headings: { en: campaign.titulo || 'Chamy', pt: campaign.titulo || 'Chamy' },
       contents: { en: campaign.mensagem || 'Você tem uma novidade.', pt: campaign.mensagem || 'Você tem uma novidade.' },
-      included_segments: ['Subscribed Users'],
       url: campaign.link || undefined,
       chrome_web_icon: `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}/favicon.png`,
       chrome_web_badge: `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}/favicon.png`,
@@ -88,18 +89,22 @@ export default async function handler(req, res) {
         campaign_id: campaign.id,
         loja_id: campaign.loja_id,
         chamy: true,
-        mode
+        mode: subscriptionIds.length ? 'include_subscription_ids' : 'no_subscription_ids'
       }
     };
 
-    // Se desejar testar segmentação por loja depois, troque o modo no frontend/API.
-    if (mode === 'loja_tag') {
-      delete payload.included_segments;
-      payload.filters = [{ field: 'tag', key: 'loja_id', relation: '=', value: campaign.loja_id }];
+    if (subscriptionIds.length) {
+      payload.include_subscription_ids = subscriptionIds;
+    } else {
+      return json(res, 400, {
+        ok: false,
+        error: 'Nenhum cliente possui onesignal_subscription_id salvo. Vá em Captura Push e ative as notificações novamente neste navegador.',
+        debug
+      });
     }
 
     debug.step = 'enviando para OneSignal';
-    debug.oneSignalPayloadMode = mode === 'loja_tag' ? 'filters.loja_id' : 'included_segments.Subscribed Users';
+    debug.oneSignalPayloadMode = 'include_subscription_ids';
 
     const response = await fetch('https://onesignal.com/api/v1/notifications', {
       method: 'POST',
@@ -151,7 +156,7 @@ export default async function handler(req, res) {
       ok: true,
       message: 'Campanha processada pela API do Chamy.',
       notificationId: oneSignalResult.id || null,
-      recipients: oneSignalResult.recipients ?? 0,
+      recipients: oneSignalResult.recipients ?? subscriptionIds.length ?? 0,
       supabasePushClients: clients?.length || 0,
       enviosInserted: debug.enviosInserted,
       enviosError: debug.enviosError,

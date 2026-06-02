@@ -82,10 +82,23 @@ async function requestPushSubscription(externalId, lojaId) {
   const permission = Notification.permission;
   let subscriptionId = '';
   let optedIn = permission === 'granted';
-  try {
-    subscriptionId = OneSignal.User?.PushSubscription?.id || '';
-    optedIn = Boolean(OneSignal.User?.PushSubscription?.optedIn ?? optedIn);
-  } catch (e) {}
+
+  // O OneSignal às vezes leva alguns instantes para criar o Subscription ID
+  // logo após o usuário clicar em "Permitir". Por isso tentamos algumas vezes.
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    try {
+      if (OneSignal.User?.PushSubscription?.optIn) {
+        await OneSignal.User.PushSubscription.optIn();
+      }
+      subscriptionId = OneSignal.User?.PushSubscription?.id || '';
+      optedIn = Boolean(OneSignal.User?.PushSubscription?.optedIn ?? optedIn);
+      if (subscriptionId) break;
+    } catch (e) {
+      console.warn('Aguardando Subscription ID do OneSignal...', e);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 600));
+  }
+
   return { permission, optedIn, subscriptionId };
 }
 
@@ -322,17 +335,22 @@ function Capture({ loja, data, setData, refreshData, user }){
         return;
       }
       const nome = result.subscriptionId ? `Push ${result.subscriptionId.slice(0, 8)}` : 'Inscrito Push';
+      if (!result.subscriptionId) {
+        setStatus('Permissão concedida, mas o OneSignal ainda não retornou o ID da inscrição. Aguarde alguns segundos e clique novamente em Ativar notificações.');
+        return;
+      }
       const { data: created, error } = await supabase.from('clientes').insert({
         loja_id: loja.id,
         nome,
         cidade: 'Navegador',
         interesse: 'Todos',
         aceitou_push: true,
+        onesignal_subscription_id: result.subscriptionId,
         status: 'ativo'
       }).select('*').single();
       if (error) throw error;
       setData({...data, customers:[{ id:created.id, name:created.nome, city:created.cidade || '', whats:'', interest:created.interesse || 'Todos', status:created.status || 'ativo', last:'Agora', device:'Push ativo' }, ...data.customers]});
-      setStatus('Push ativado e inscrito salvo no Supabase. Agora este navegador está registrado para testes.');
+      setStatus(`Push ativado com sucesso. Subscription ID sincronizado: ${result.subscriptionId}`);
       refreshData?.();
     } catch (e) {
       console.error(e);
