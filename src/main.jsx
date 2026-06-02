@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Bell, BarChart3, Send, Zap, Users, Crown, Settings, Store, LifeBuoy, Plus, Search, Play, Pause, Trash2, Copy, ShieldCheck, MousePointerClick, MessageCircle, TrendingUp, ShoppingCart, Rocket, Gift, Sparkles, RotateCcw, Globe, CheckCircle2, Lock, LogOut, UserPlus, CreditCard, HelpCircle, Menu, MoreVertical, Mail, AlertCircle } from 'lucide-react';
+import { Bell, BarChart3, Send, Zap, Users, Crown, Settings, Store, LifeBuoy, Plus, Search, Play, Pause, Trash2, Copy, ShieldCheck, MousePointerClick, MessageCircle, TrendingUp, ShoppingCart, Rocket, Gift, Sparkles, RotateCcw, Globe, CheckCircle2, Lock, LogOut, UserPlus, CreditCard, HelpCircle, Menu, MoreVertical, Mail, AlertCircle, QrCode, ExternalLink } from 'lucide-react';
 import './styles.css';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 
@@ -18,6 +18,7 @@ function Badge({ children, tone = 'violet' }) { return <span className={`badge $
 function Logo({ compact = false }) { return <div className={compact ? 'brand compact' : 'brand'}><img src="/logo-chamy.png" alt="Chamy" /></div>; }
 function normalizePlan(plan = 'gratis') { return String(plan).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
 function nicePlan(plan = 'gratis') { return plans[normalizePlan(plan)]?.label || plan || 'Grátis'; }
+function slugify(text = '') { return String(text || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'') || 'loja'; }
 
 
 function parsePct(rate) {
@@ -224,9 +225,9 @@ function Login({ setUser }) {
   return <div className="loginScreen">
     <div className="loginHero">
       <Logo />
-      <h1>Campanhas simples para chamar clientes de volta.</h1>
-      <p>Login real pelo Supabase para vendedores e administração geral do Chamy.</p>
-      <div className="heroCards"><span>Login real</span><span>Cadastro de lojas</span><span>Painel Admin</span><span>Supabase conectado</span></div>
+      <h1>Notificações que trazem clientes de volta para comprar.</h1>
+      <p>Crie campanhas de promoções, novidades e lembretes em poucos cliques. Seus clientes autorizam o recebimento e voltam direto para sua loja, catálogo ou WhatsApp.</p>
+      <div className="heroCards"><span>Promoções em 1 clique</span><span>Clientes inscritos</span><span>Relatórios reais</span><span>Menos dependência do WhatsApp</span></div>
     </div>
     <Card className="loginBox">
       <img className="loginIcon" src="/app-icon.png" alt="" />
@@ -531,6 +532,92 @@ function Reports({ data, user }){
     <Card className="tipsCard"><h3>O que estes dados mostram?</h3><p>Envios vêm da tabela <b>envios</b>, inscritos vêm da tabela <b>clientes</b> e campanhas vêm da tabela <b>campanhas</b>. Assim o vendedor passa a enxergar o resultado real das notificações enviadas.</p></Card>
   </>;
 }
+
+function PublicCapture(){
+  const [loja, setLoja] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState({ nome:'', whatsapp:'', cidade:'', interesse:'Todos' });
+  const [status, setStatus] = useState('');
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    async function loadLoja(){
+      if (!supabase) { setStatus('Supabase não configurado.'); setLoading(false); return; }
+      const params = new URLSearchParams(window.location.search);
+      const lojaId = params.get('loja_id') || params.get('loja');
+      try {
+        if (lojaId) {
+          const { data, error } = await supabase.from('lojas').select('*').eq('id', lojaId).maybeSingle();
+          if (error) throw error;
+          setLoja(data);
+        } else {
+          const slug = window.location.pathname.split('/loja/')[1]?.replace(/\/$/,'') || '';
+          const { data, error } = await supabase.from('lojas').select('*').eq('status','ativa');
+          if (error) throw error;
+          const found = (data || []).find(l => slugify(l.nome) === slug) || null;
+          setLoja(found);
+        }
+      } catch (e) {
+        setStatus(e.message || 'Erro ao carregar loja.');
+      } finally { setLoading(false); }
+    }
+    loadLoja();
+  }, []);
+
+  async function activatePublicPush(e){
+    e?.preventDefault?.();
+    if (!loja?.id) return setStatus('Loja não encontrada.');
+    if (!form.nome.trim()) return setStatus('Informe seu nome para continuar.');
+    try {
+      setLoading(true);
+      setStatus('Solicitando permissão para notificações...');
+      const result = await requestPushSubscription(`public:${loja.id}:${form.whatsapp || form.nome}`, loja.id);
+      if (result.permission !== 'granted') {
+        setStatus('Você precisa permitir as notificações no navegador para concluir o cadastro.');
+        return;
+      }
+      if (!result.subscriptionId) {
+        setStatus('Permissão concedida, mas o OneSignal ainda não retornou o ID. Aguarde alguns segundos e tente novamente.');
+        return;
+      }
+      const { error } = await supabase.rpc('chamy_public_register_push', {
+        p_loja_id: loja.id,
+        p_nome: form.nome,
+        p_whatsapp: form.whatsapp || '',
+        p_cidade: form.cidade || '',
+        p_interesse: form.interesse || 'Todos',
+        p_subscription_id: result.subscriptionId
+      });
+      if (error) throw error;
+      setDone(true);
+      setStatus('Cadastro realizado! Agora você receberá novidades e promoções desta loja.');
+    } catch (e) {
+      console.error(e);
+      setStatus(e.message || 'Falha ao cadastrar.');
+    } finally { setLoading(false); }
+  }
+
+  if (loading && !loja) return <div className="publicPage"><Card className="publicCard"><Logo/><h2>Carregando loja...</h2></Card></div>;
+  if (!loja) return <div className="publicPage"><Card className="publicCard"><Logo/><h2>Loja não encontrada</h2><p>Confira o link recebido ou peça um novo convite para a loja.</p><a className="publicLink" href="/">Voltar para o Chamy</a></Card></div>;
+
+  return <div className="publicPage">
+    <Card className="publicCard">
+      <Logo />
+      <Badge tone="green">Inscrição gratuita</Badge>
+      <h1>Receba promoções e novidades da {loja.nome}</h1>
+      <p className="publicLead">Cadastre-se para ser avisado quando chegarem ofertas, lançamentos e campanhas especiais. Você pode bloquear as notificações quando quiser no seu navegador.</p>
+      <form onSubmit={activatePublicPush} className="publicForm">
+        <label>Seu nome</label><input value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} placeholder="Ex: Maria Silva" />
+        <label>WhatsApp</label><input value={form.whatsapp} onChange={e=>setForm({...form,whatsapp:e.target.value})} placeholder="(12) 99999-9999" />
+        <div className="two"><div><label>Cidade/UF</label><input value={form.cidade} onChange={e=>setForm({...form,cidade:e.target.value})} placeholder="Aparecida/SP" /></div><div><label>Interesse</label><select value={form.interesse} onChange={e=>setForm({...form,interesse:e.target.value})}><option>Todos</option><option>Promoções</option><option>Novidades</option><option>Clientes VIP</option></select></div></div>
+        {status && <p className={done ? 'successMessage' : 'authMessage'}>{status}</p>}
+        <Button className="primary" disabled={loading || done}>{done ? <CheckCircle2 size={17}/> : <Bell size={17}/>} {done ? 'Notificações ativadas' : loading ? 'Ativando...' : 'Quero receber avisos'}</Button>
+      </form>
+      <div className="publicBenefits"><span><Gift/> Promoções</span><span><Sparkles/> Novidades</span><span><ShieldCheck/> Cadastro seguro</span></div>
+    </Card>
+  </div>;
+}
+
 function StorePanel({ loja, refreshData }){
   const [form, setForm] = useState({
     nome: loja?.nome || '',
@@ -539,7 +626,7 @@ function StorePanel({ loja, refreshData }){
     cidade: loja?.cidade || ''
   });
   const [msg, setMsg] = useState('');
-  const slug = (loja?.nome || 'minha-loja').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'') || loja?.id || 'minha-loja';
+  const slug = slugify(loja?.nome || 'minha-loja');
   const publicLink = `${window.location.origin}/loja/${slug}`;
   const widgetCode = `<script src="${window.location.origin}/widget.js" data-loja="${loja?.id || 'ID_DA_LOJA'}"></script>`;
   useEffect(()=>{ setForm({ nome: loja?.nome || '', site: loja?.site || '', whatsapp: loja?.whatsapp || '', cidade: loja?.cidade || '' }); }, [loja?.id]);
@@ -566,7 +653,7 @@ function StorePanel({ loja, refreshData }){
       <label>Link público da loja</label><div className="copyBox"><code>{publicLink}</code><Button onClick={()=>navigator.clipboard?.writeText(publicLink)}><Copy size={16}/> Copiar</Button></div>
       <label>Código do widget</label><pre>{widgetCode}</pre>
       <Button onClick={()=>navigator.clipboard?.writeText(widgetCode)}><Copy size={16}/> Copiar widget</Button>
-      <div className="qrPlaceholder"><Globe/><b>QR Code da loja</b><span>Este espaço será usado na próxima etapa para gerar o QR Code público de inscrição.</span></div>
+      <div className="qrPlaceholder"><QrCode/><b>Página pública pronta</b><span>Divulgue este link em grupos, redes sociais, bio do Instagram, catálogo e materiais impressos. O QR Code visual será uma próxima melhoria.</span><Button onClick={()=>window.open(publicLink, '_blank')}><ExternalLink size={16}/> Abrir página pública</Button></div>
     </Card>
   </div>;
 }
@@ -665,6 +752,7 @@ function App(){
   const [loja,setLoja]=useState(null);
   const [checking,setChecking]=useState(true);
   const [loadError,setLoadError]=useState('');
+  const isPublicCapture = window.location.pathname.startsWith('/loja');
 
   async function loadUserData(currentUser) {
     if (!currentUser?.id || !supabase) return;
@@ -745,6 +833,7 @@ function App(){
 
   useEffect(() => { if (user?.id) loadUserData(user); }, [user?.id, user?.role]);
 
+  if (isPublicCapture) return <PublicCapture/>;
   if (checking) return <div className="loginScreen"><Card className="loginBox"><Logo/><h2>Carregando Chamy...</h2></Card></div>;
   if(!user) return <Login setUser={setUser}/>;
   const refreshData = () => loadUserData(user);
