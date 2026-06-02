@@ -209,11 +209,12 @@ function Login({ setUser }) {
 const sellerMenu = [ ['dash','Dashboard',BarChart3], ['camp','Campanhas',Send], ['auto','Automação',Zap], ['clients','Inscritos',Users], ['capture','Captura Push',Bell], ['segments','Segmentos',Users], ['reports','Relatórios',TrendingUp], ['store','Loja',Store], ['plans','Planos',Crown], ['config','Configurações',Settings] ];
 const adminMenu = [ ['dash','Dashboard Geral',BarChart3], ['vendors','Vendedores',Store], ['plans','Planos',Crown], ['global','Campanhas Globais',Send], ['support','Suporte',LifeBuoy], ['settings','Configurações',Settings] ];
 
-function Shell({ user, setUser, active, setActive, menu, children }) {
+function Shell({ user, setUser, active, setActive, menu, children, data }) {
   return <div className="app">
     <aside className="sidebar">
       <Logo />
       <nav>{menu.map(([id, label, Icon]) => <button key={id} onClick={() => setActive(id)} className={active === id ? 'active' : ''}><Icon size={19}/><span>{label}</span><b>›</b></button>)}</nav>
+      <SidebarValueCard user={user} data={data} setActive={setActive} />
       <button className="logout" onClick={async () => { if (supabase) await supabase.auth.signOut(); setUser(null); }}><LogOut size={17}/> Sair</button>
     </aside>
     <main>
@@ -224,6 +225,54 @@ function Shell({ user, setUser, active, setActive, menu, children }) {
 }
 
 function Stat({ Icon, label, value, change, color = 'purple' }) { return <Card className="stat"><span className={color}><Icon/></span><div><h2>{value}</h2><p>{label}</p><small>↗ {change}</small></div></Card>; }
+
+function SidebarValueCard({ user, data, setActive }) {
+  if (!user) return null;
+  if (user.role === 'admin') {
+    const paid = (data?.vendors || []).filter(v => normalizePlan(v.plan) !== 'gratis').length;
+    return <div className="accountSummary adminSummary">
+      <div className="summaryTop"><BarChart3 size={20}/><b>Resumo da Plataforma</b></div>
+      <p><span>Vendedores</span><strong>{data?.vendors?.length || 0}</strong></p>
+      <p><span>Planos pagos</span><strong>{paid}</strong></p>
+      <p><span>Status</span><strong>Ativo</strong></p>
+      <button onClick={() => setActive('dash')}>Ver painel geral</button>
+    </div>;
+  }
+
+  const planKey = normalizePlan(user.plan || 'gratis');
+  const plan = plans[planKey] || plans.gratis;
+  const subscribers = data?.customers?.length || 0;
+  const campaigns = data?.campaigns?.length || 0;
+  const campaignLimit = planKey === 'gratis' ? 20 : null;
+  const subPct = Math.min(100, Math.round((subscribers / plan.limit) * 100));
+  const campPct = campaignLimit ? Math.min(100, Math.round((campaigns / campaignLimit) * 100)) : 100;
+  const best = [...(data?.campaigns || [])].sort((a, b) => (Number(b.clicks || 0) - Number(a.clicks || 0)) || (Number(b.sent || 0) - Number(a.sent || 0)))[0];
+  const bestLabel = best ? best.title.replace(/^🔥|^✨/g, '').trim() : 'Nenhuma campanha ainda';
+  const bestMetric = best ? `${Number(best.sent || 0)} envios • ${Number(best.clicks || 0)} cliques` : 'Crie sua primeira campanha';
+
+  return <div className="accountSummary">
+    <div className="summaryTop"><BarChart3 size={20}/><b>Resumo da Conta</b></div>
+    <p><span>Plano atual</span><strong>{plan.label}</strong></p>
+
+    <div className="usageBlock">
+      <div><span>Inscritos</span><strong>{subscribers} / {plan.limit.toLocaleString('pt-BR')}</strong></div>
+      <div className="miniBar"><i style={{ width: `${subPct}%` }} /></div>
+    </div>
+
+    <div className="usageBlock">
+      <div><span>Campanhas</span><strong>{campaignLimit ? `${campaigns} / ${campaignLimit}` : `${campaigns} / ilimitado`}</strong></div>
+      <div className="miniBar"><i style={{ width: `${campPct}%` }} /></div>
+    </div>
+
+    <div className="bestCampaign">
+      <small>Melhor campanha do mês</small>
+      <b>{bestLabel}</b>
+      <em>{bestMetric}</em>
+    </div>
+
+    <button onClick={() => setActive('reports')}>Ver Relatórios</button>
+  </div>;
+}
 
 function Dashboard({ data, user, setActive }) {
   const sent = data.campaigns.reduce((a,c)=>a+(Number(c.sent)||0),0), clicks = data.campaigns.reduce((a,c)=>a+(Number(c.clicks)||0),0);
@@ -371,7 +420,7 @@ function SettingsPanel({ loja }){return <Card><h3>Configurações</h3><label>Nom
 
 function Seller({ user, setUser, data, setData, loja, refreshData }) {
   const [active,setActive]=useState('dash');
-  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={sellerMenu}>{active==='dash'&&<Dashboard data={data} user={user} setActive={setActive}/>} {active==='camp'&&<Campaigns data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData}/>} {active==='auto'&&<Automations/>} {active==='clients'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData}/>} {active==='capture'&&<Capture loja={loja} data={data} setData={setData} refreshData={refreshData} user={user}/>} {active==='segments'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData}/>} {active==='reports'&&<Reports/>} {active==='store'&&<SettingsPanel loja={loja}/>} {active==='plans'&&<Plans/>} {active==='config'&&<SettingsPanel loja={loja}/>}</Shell>;
+  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={sellerMenu} data={data}>{active==='dash'&&<Dashboard data={data} user={user} setActive={setActive}/>} {active==='camp'&&<Campaigns data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData}/>} {active==='auto'&&<Automations/>} {active==='clients'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData}/>} {active==='capture'&&<Capture loja={loja} data={data} setData={setData} refreshData={refreshData} user={user}/>} {active==='segments'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData}/>} {active==='reports'&&<Reports/>} {active==='store'&&<SettingsPanel loja={loja}/>} {active==='plans'&&<Plans/>} {active==='config'&&<SettingsPanel loja={loja}/>}</Shell>;
 }
 
 function Admin({ user, setUser, data, setData, refreshData }) {
@@ -379,7 +428,7 @@ function Admin({ user, setUser, data, setData, refreshData }) {
   async function addVendor(){
     alert('Por segurança, crie vendedores pelo cadastro normal ou em Authentication > Users. Depois eles aparecerão aqui.');
   }
-  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={adminMenu}>{active==='dash'&&<><div className="stats"><Stat Icon={Store} label="Vendedores" value={data.vendors.length} change="dados reais"/><Stat Icon={Users} label="Inscritos totais" value={data.vendors.reduce((a,v)=>a+(Number(v.subscribers)||0),0).toLocaleString('pt-BR')} change="em todas as lojas" color="blue"/><Stat Icon={CreditCard} label="Planos pagos" value={data.vendors.filter(v=>normalizePlan(v.plan)!=='gratis').length} change="Pro/Business" color="green"/><Stat Icon={TrendingUp} label="MRR estimado" value={`R$ ${data.vendors.reduce((a,v)=>a+(normalizePlan(v.plan)==='pro'?39:normalizePlan(v.plan)==='business'?149:0),0)}`} change="base atual" color="orange"/></div><Card><div className="cardHead"><h3>Vendedores recentes</h3><Button onClick={refreshData}>Atualizar</Button></div><Table rows={data.vendors} cols={['name','email','plan','status','subscribers','campaigns','sales']}/></Card></>} {active==='vendors'&&<Card><div className="cardHead"><h3>Vendedores / usuários</h3><Button className="primary" onClick={addVendor}><Plus size={17}/> Adicionar</Button></div><Table rows={data.vendors} cols={['name','email','plan','status','subscribers','campaigns','sales']}/></Card>} {active==='plans'&&<Plans/>} {active==='global'&&<Card><h3>Campanha global para vendedores</h3><input defaultValue="Novidade no Chamy"/><textarea defaultValue="Agora você pode criar campanhas automáticas em poucos cliques."/><Button className="primary"><Send size={17}/> Enviar aviso geral</Button></Card>} {active==='support'&&<Card><h3>Chamados</h3><Table rows={data.tickets} cols={['vendor','subject','status']}/></Card>} {active==='settings'&&<SettingsPanel/>}</Shell>;
+  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={adminMenu} data={data}>{active==='dash'&&<><div className="stats"><Stat Icon={Store} label="Vendedores" value={data.vendors.length} change="dados reais"/><Stat Icon={Users} label="Inscritos totais" value={data.vendors.reduce((a,v)=>a+(Number(v.subscribers)||0),0).toLocaleString('pt-BR')} change="em todas as lojas" color="blue"/><Stat Icon={CreditCard} label="Planos pagos" value={data.vendors.filter(v=>normalizePlan(v.plan)!=='gratis').length} change="Pro/Business" color="green"/><Stat Icon={TrendingUp} label="MRR estimado" value={`R$ ${data.vendors.reduce((a,v)=>a+(normalizePlan(v.plan)==='pro'?39:normalizePlan(v.plan)==='business'?149:0),0)}`} change="base atual" color="orange"/></div><Card><div className="cardHead"><h3>Vendedores recentes</h3><Button onClick={refreshData}>Atualizar</Button></div><Table rows={data.vendors} cols={['name','email','plan','status','subscribers','campaigns','sales']}/></Card></>} {active==='vendors'&&<Card><div className="cardHead"><h3>Vendedores / usuários</h3><Button className="primary" onClick={addVendor}><Plus size={17}/> Adicionar</Button></div><Table rows={data.vendors} cols={['name','email','plan','status','subscribers','campaigns','sales']}/></Card>} {active==='plans'&&<Plans/>} {active==='global'&&<Card><h3>Campanha global para vendedores</h3><input defaultValue="Novidade no Chamy"/><textarea defaultValue="Agora você pode criar campanhas automáticas em poucos cliques."/><Button className="primary"><Send size={17}/> Enviar aviso geral</Button></Card>} {active==='support'&&<Card><h3>Chamados</h3><Table rows={data.tickets} cols={['vendor','subject','status']}/></Card>} {active==='settings'&&<SettingsPanel/>}</Shell>;
 }
 
 function Table({ rows, cols }) {
@@ -424,9 +473,21 @@ function App(){
         if (clientesError) throw clientesError;
         const { data: campanhas, error: campanhasError } = await supabase.from('campanhas').select('*').eq('loja_id', lojaAtual.id).order('created_at', { ascending:false });
         if (campanhasError) throw campanhasError;
+        const campaignIds = (campanhas || []).map(c => c.id);
+        let envios = [];
+        if (campaignIds.length) {
+          const { data: enviosData, error: enviosError } = await supabase.from('envios').select('campanha_id,clicou').in('campanha_id', campaignIds);
+          if (!enviosError) envios = enviosData || [];
+        }
         setData(prev => ({...prev,
           customers: (clientes || []).map((c) => ({ id: c.id, name: c.nome || 'Cliente', city: c.cidade || '', whats: c.whatsapp || '', interest: c.interesse || 'Todos', status: c.status || 'ativo', last: 'Supabase', device: c.aceitou_push ? 'Push ativo' : 'Sem push' })),
-          campaigns: (campanhas || []).map((c) => ({ id: c.id, title: c.titulo, msg: c.mensagem, status: c.status || 'rascunho', audience: c.publico || 'Todos', freq: c.frequencia || 'único', duration: `${c.duracao_dias || 1} dias`, sent: 0, clicks: 0, rate: '0%', date: c.created_at ? new Date(c.created_at).toLocaleDateString('pt-BR') : '' }))
+          campaigns: (campanhas || []).map((c) => {
+            const rows = envios.filter(e => e.campanha_id === c.id);
+            const sent = rows.length;
+            const clicks = rows.filter(e => e.clicou).length;
+            const rate = sent ? `${Math.round((clicks / sent) * 100)}%` : '0%';
+            return { id: c.id, title: c.titulo, msg: c.mensagem, status: c.status || 'rascunho', audience: c.publico || 'Todos', freq: c.frequencia || 'único', duration: `${c.duracao_dias || 1} dias`, sent, clicks, rate, date: c.created_at ? new Date(c.created_at).toLocaleDateString('pt-BR') : '' };
+          })
         }));
       }
     } catch (e) {
