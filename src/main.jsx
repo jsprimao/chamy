@@ -266,11 +266,16 @@ function Campaigns({ data, setData, lojaId, refreshData }) {
       const res = await fetch('/api/send-campaign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ campaignId: c.id })
+        body: JSON.stringify({ campaignId: c.id, mode: 'all_subscribers' })
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || 'Falha ao enviar campanha.');
-      alert(`Campanha enviada! Destinatários estimados: ${json.recipients || 0}`);
+      if (!res.ok || !json.ok) {
+        console.error('Erro envio Chamy/OneSignal:', json);
+        throw new Error(json.error || 'Falha ao enviar campanha. Abra o console/logs para detalhes.');
+      }
+      console.log('Resposta envio Chamy/OneSignal:', json);
+      const avisoEnvios = json.enviosError ? `\nAtenção: notificação enviada, mas houve erro ao registrar envios: ${json.enviosError}` : '';
+      alert(`Campanha enviada para o OneSignal!\nDestinatários OneSignal: ${json.recipients || 0}\nClientes push no Supabase: ${json.supabasePushClients || 0}\nRegistros em envios: ${json.enviosInserted || 0}${avisoEnvios}`);
       refreshData?.();
     } catch (e) {
       alert(e.message || 'Falha ao enviar campanha.');
