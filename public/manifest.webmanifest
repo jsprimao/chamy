@@ -1,0 +1,14 @@
+{
+  "name": "Chamy - Notificações que vendem",
+  "short_name": "Chamy",
+  "description": "Campanhas inteligentes para chamar clientes de volta.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#060713",
+  "theme_color": "#5b21e8",
+  "icons": [
+    { "src": "/favicon.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/app-icon.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

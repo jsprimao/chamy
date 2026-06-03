@@ -63,6 +63,28 @@ function ProgressLine({ label, value, limit, pct }) {
   return <div className="usageLine"><div><span>{label}</span><b>{limit ? `${value} / ${limit.toLocaleString('pt-BR')}` : `${value} / ilimitado`}</b></div><div className="bar"><i style={{width:`${pct}%`}} /></div></div>;
 }
 
+function FirstSteps({ loja, data, setActive }) {
+  const publicLink = loja?.id ? `${window.location.origin}/loja/${loja.id}` : '';
+  const steps = [
+    { label: 'Configurar dados da loja', done: Boolean(loja?.nome), action: () => setActive('store') },
+    { label: 'Enviar logo da loja', done: Boolean(loja?.logo_url), action: () => setActive('store') },
+    { label: 'Divulgar link público', done: Boolean(publicLink), action: () => setActive('store') },
+    { label: 'Captar primeiro inscrito', done: (data?.customers?.length || 0) > 0, action: () => setActive('capture') },
+    { label: 'Criar primeira campanha', done: (data?.campaigns?.length || 0) > 0, action: () => setActive('camp') },
+    { label: 'Gerar primeiros envios', done: (data?.campaigns || []).some(c => Number(c.sent || 0) > 0), action: () => setActive('camp') }
+  ];
+  return <Card className="firstStepsPanel">
+    <div className="cardHead"><h3>Primeiros passos</h3><Badge tone="green">Guia rápido</Badge></div>
+    <p className="muted">Complete estes passos para deixar sua loja pronta para captar clientes e vender mais com notificações.</p>
+    <div className="stepsList">
+      {steps.map((step, idx) => <button key={step.label} onClick={step.action} className={step.done ? 'done' : ''}>
+        {step.done ? <CheckCircle2 size={18}/> : <span>{idx + 1}</span>}
+        <b>{step.label}</b>
+      </button>)}
+    </div>
+  </Card>;
+}
+
 const oneSignalAppId = import.meta.env.VITE_ONESIGNAL_APP_ID || '';
 let oneSignalInitPromise = null;
 
@@ -321,7 +343,7 @@ function SidebarValueCard({ user, data, setActive }) {
   </div>;
 }
 
-function Dashboard({ data, user, setActive }) {
+function Dashboard({ data, user, setActive, loja }) {
   const analytics = calculateAnalytics(data, user);
   const plan = plans[normalizePlan(user.plan)] || plans.gratis;
   const best = analytics.bestCampaign;
@@ -330,6 +352,8 @@ function Dashboard({ data, user, setActive }) {
 
   return <>
     <div className="welcome"><div><Rocket/><h2>Bem-vindo de volta! 👋</h2><p>Veja resultados reais das suas campanhas e acompanhe o crescimento da sua loja.</p></div><Button onClick={() => setActive('camp')}><Send size={17}/> Criar campanha</Button></div>
+
+    <FirstSteps loja={loja} data={data} setActive={setActive} />
 
     <div className="stats">
       <Stat Icon={Users} label="Inscritos" value={analytics.subscribersUsed} change="dados reais" />
@@ -399,7 +423,7 @@ function Campaigns({ data, setData, lojaId, refreshData }) {
     const { data: created, error } = await supabase.from('campanhas').insert({ loja_id: lojaId, titulo: form.title, mensagem: form.msg, link: form.link, publico: form.audience, frequencia: form.freq, duracao_dias: duracao, status:'Ativa' }).select('*').single();
     setSaving(false);
     if (error) return alert(error.message);
-    setData({...data, campaigns:[{ id:created.id, title:created.titulo, msg:created.mensagem, status:created.status, audience:created.publico, freq:created.frequencia, duration:`${created.duracao_dias} dias`, sent:0, clicks:0, rate:'0%', date:'Agora' }, ...data.campaigns]});
+    setData({...data, campaigns:[{ id:created.id, title:created.titulo, msg:created.mensagem, link:created.link || '', status:created.status, audience:created.publico, freq:created.frequencia, duration:`${created.duracao_dias} dias`, sent:0, clicks:0, rate:'0%', date:'Agora' }, ...data.campaigns]});
     refreshData?.();
   }
   async function toggleCampaign(c){
@@ -439,12 +463,12 @@ function Campaigns({ data, setData, lojaId, refreshData }) {
     }
   }
   function testNotify(){ if(!('Notification' in window)) return alert('Seu navegador não suporta notificações.'); Notification.requestPermission().then(p=> p==='granted' ? new Notification(form.title,{body:form.msg,icon:'/favicon.png'}) : alert('Permissão de notificação negada.')); }
-  return <div className="campaignPage"><Card className="creator"><h3>Nova campanha</h3><p className="muted">Escolha um modelo pronto ou personalize.</p><div className="templates">{templates.map(([name,Icon,title,msg])=><button key={name} onClick={()=>setForm({...form,title,msg})}><Icon/><b>{name}</b></button>)}</div><label>Título</label><input value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/><label>Mensagem</label><textarea value={form.msg} onChange={e=>setForm({...form,msg:e.target.value})}/><label>Link de destino</label><input value={form.link} onChange={e=>setForm({...form,link:e.target.value})} placeholder="https://sualoja.com/promocoes"/><div className="two"><div><label>Público</label><select value={form.audience} onChange={e=>setForm({...form,audience:e.target.value})}><option>Todos</option><option>Promoções</option><option>Clientes inativos</option><option>Quem clicou na última campanha</option></select></div><div><label>Frequência</label><select value={form.freq} onChange={e=>setForm({...form,freq:e.target.value})}><option>A cada 4 horas</option><option>Diária</option><option>Semanal</option><option>Envio único</option></select></div></div><label>Duração</label><select value={form.duration} onChange={e=>setForm({...form,duration:e.target.value})}><option>7 dias</option><option>3 dias</option><option>1 dia</option><option>Até pausar</option></select><label className="check"><input type="checkbox" defaultChecked/> Não enviar de madrugada</label><label className="check"><input type="checkbox" defaultChecked/> Não repetir para quem já clicou</label><div className="two"><Button className="primary" onClick={addCampaign} disabled={saving}><Play size={17}/> {saving ? 'Salvando...' : 'Iniciar campanha'}</Button><Button onClick={testNotify}><Bell size={17}/> Testar notificação</Button></div></Card><Card><div className="cardHead"><h3>Campanhas</h3><Badge>{data.campaigns.length} criadas</Badge></div><CampaignList data={data} onToggle={toggleCampaign} onDelete={deleteCampaign} onSend={sendCampaign}/></Card></div>;
+  return <div className="campaignPage"><Card className="creator"><h3>Nova campanha</h3><p className="muted">Escolha um modelo pronto ou personalize.</p><div className="templates">{templates.map(([name,Icon,title,msg])=><button key={name} onClick={()=>setForm({...form,title,msg})}><Icon/><b>{name}</b></button>)}</div><label>Título</label><input value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/><label>Mensagem</label><textarea value={form.msg} onChange={e=>setForm({...form,msg:e.target.value})}/><label>URL de destino da campanha</label><input value={form.link} onChange={e=>setForm({...form,link:e.target.value})} placeholder="https://catalogo.com.br/promocao ou https://wa.me/55..."/><p className="miniNote">Se deixar vazio, o clique abrirá automaticamente a página pública da sua loja.</p><div className="two"><div><label>Público</label><select value={form.audience} onChange={e=>setForm({...form,audience:e.target.value})}><option>Todos</option><option>Promoções</option><option>Clientes inativos</option><option>Quem clicou na última campanha</option></select></div><div><label>Frequência</label><select value={form.freq} onChange={e=>setForm({...form,freq:e.target.value})}><option>A cada 4 horas</option><option>Diária</option><option>Semanal</option><option>Envio único</option></select></div></div><label>Duração</label><select value={form.duration} onChange={e=>setForm({...form,duration:e.target.value})}><option>7 dias</option><option>3 dias</option><option>1 dia</option><option>Até pausar</option></select><label className="check"><input type="checkbox" defaultChecked/> Não enviar de madrugada</label><label className="check"><input type="checkbox" defaultChecked/> Não repetir para quem já clicou</label><div className="two"><Button className="primary" onClick={addCampaign} disabled={saving}><Play size={17}/> {saving ? 'Salvando...' : 'Iniciar campanha'}</Button><Button onClick={testNotify}><Bell size={17}/> Testar notificação</Button></div></Card><Card><div className="cardHead"><h3>Campanhas</h3><Badge>{data.campaigns.length} criadas</Badge></div><CampaignList data={data} onToggle={toggleCampaign} onDelete={deleteCampaign} onSend={sendCampaign}/></Card></div>;
 }
 
 function CampaignList({ data, onToggle, onDelete, onSend }) {
   if (!data.campaigns.length) return <p className="muted">Nenhuma campanha criada ainda.</p>;
-  return <div className="campaignList">{data.campaigns.map(c=><div className="campaign" key={c.id}><div className="thumb"><Send/></div><div><b>{c.title}</b><p>{c.msg}</p><small>{c.freq} • {c.duration} • {c.audience}</small></div><div className="metrics"><span><b>{c.sent}</b>Enviados</span><span><b>{c.clicks}</b>Cliques</span><span><b>{c.rate}</b>Taxa</span><Badge tone={c.status==='Ativa'?'green':c.status==='Programada'?'violet':'gray'}>{c.status}</Badge>{onToggle&&<><Button className="primary" onClick={()=>onSend?.(c)}><Send size={16}/> Enviar agora</Button><Button onClick={()=>onToggle(c)}>{c.status==='Ativa'?<Pause size={16}/>:<Play size={16}/>}</Button><Button onClick={()=>onDelete(c)}><Trash2 size={16}/></Button></>}<MoreVertical size={18}/></div></div>)}</div>;
+  return <div className="campaignList">{data.campaigns.map(c=><div className="campaign" key={c.id}><div className="thumb"><Send/></div><div><b>{c.title}</b><p>{c.msg}</p><small>{c.freq} • {c.duration} • {c.audience}{c.link ? ` • destino configurado` : ' • destino: página pública'}</small></div><div className="metrics"><span><b>{c.sent}</b>Enviados</span><span><b>{c.clicks}</b>Cliques</span><span><b>{c.rate}</b>Taxa</span><Badge tone={c.status==='Ativa'?'green':c.status==='Programada'?'violet':'gray'}>{c.status}</Badge>{onToggle&&<><Button className="primary" onClick={()=>onSend?.(c)}><Send size={16}/> Enviar agora</Button><Button onClick={()=>onToggle(c)}>{c.status==='Ativa'?<Pause size={16}/>:<Play size={16}/>}</Button><Button onClick={()=>onDelete(c)}><Trash2 size={16}/></Button></>}<MoreVertical size={18}/></div></div>)}</div>;
 }
 
 function Customers({ data, setData, lojaId, refreshData }) {
@@ -627,7 +651,7 @@ function PublicCapture(){
         <Button className="primary" disabled={loading || done}>{done ? <CheckCircle2 size={17}/> : <Bell size={17}/>} {done ? 'Notificações ativadas' : loading ? 'Ativando...' : 'Quero receber avisos'}</Button>
       </form>
       <div className="publicBenefits"><span><Gift/> Promoções</span><span><Sparkles/> Novidades</span><span><ShieldCheck/> Cadastro seguro</span></div>
-      <p className="poweredBy">Notificações inteligentes por <b>Chamy</b></p>
+      <p className="installHint">📲 No celular, adicione esta página à tela inicial para receber avisos com mais destaque.</p><p className="poweredBy">Notificações inteligentes por <b>Chamy</b></p>
     </Card>
   </div>;
 }
@@ -709,7 +733,7 @@ function StorePanel({ loja, refreshData }){
       <label>Link público da loja</label><div className="copyBox"><code>{publicLink}</code><Button onClick={()=>navigator.clipboard?.writeText(publicLink)}><Copy size={16}/> Copiar</Button></div><p className="miniNote">Este é o link estável da captura pública. Ele usa o ID da loja para evitar erro quando o nome da loja muda.</p>
       <label>Código do widget</label><pre>{widgetCode}</pre>
       <Button onClick={()=>navigator.clipboard?.writeText(widgetCode)}><Copy size={16}/> Copiar widget</Button>
-      <div className="qrPlaceholder"><QrCode/><b>Página pública pronta</b><span>Divulgue este link em grupos, redes sociais, bio do Instagram, catálogo e materiais impressos. O QR Code visual será uma próxima melhoria.</span><Button onClick={()=>window.open(publicLink, '_blank')}><ExternalLink size={16}/> Abrir página pública</Button></div>
+      <div className="qrBox"><div><QrCode/><b>QR Code da loja</b><span>Use em balcão, embalagem, cartão, evento ou grupos de WhatsApp para captar inscritos rapidamente.</span></div><img src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(publicLink)}`} alt="QR Code da loja"/><div className="two"><Button onClick={()=>window.open(publicLink, '_blank')}><ExternalLink size={16}/> Abrir página</Button><Button onClick={()=>{const a=document.createElement('a');a.href=`https://api.qrserver.com/v1/create-qr-code/?size=800x800&data=${encodeURIComponent(publicLink)}`;a.download='qrcode-chamy.png';a.click();}}><QrCode size={16}/> Baixar QR</Button></div></div><div className="installHelp"><b>📲 Dica para celular</b><span>Oriente seus clientes a adicionarem a página à tela inicial. No Android isso melhora a experiência e deixa as notificações mais parecidas com app.</span></div>
     </Card>
   </div>;
 }
@@ -786,7 +810,7 @@ function TargetIcon(){ return <Users size={20}/>; }
 
 function Seller({ user, setUser, data, setData, loja, refreshData }) {
   const [active,setActive]=useState('dash');
-  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={sellerMenu} data={data}>{active==='dash'&&<Dashboard data={data} user={user} setActive={setActive}/>} {active==='camp'&&<Campaigns data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData}/>} {active==='auto'&&<Automations/>} {active==='clients'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData}/>} {active==='capture'&&<Capture loja={loja} data={data} setData={setData} refreshData={refreshData} user={user}/>} {active==='segments'&&<Segments data={data}/>} {active==='reports'&&<Reports data={data} user={user}/>} {active==='store'&&<StorePanel loja={loja} refreshData={refreshData}/>} {active==='plans'&&<Plans/>} {active==='config'&&<ConfigPanel user={user} setUser={setUser}/>}</Shell>;
+  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={sellerMenu} data={data}>{active==='dash'&&<Dashboard data={data} user={user} setActive={setActive} loja={loja}/>} {active==='camp'&&<Campaigns data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData}/>} {active==='auto'&&<Automations/>} {active==='clients'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData}/>} {active==='capture'&&<Capture loja={loja} data={data} setData={setData} refreshData={refreshData} user={user}/>} {active==='segments'&&<Segments data={data}/>} {active==='reports'&&<Reports data={data} user={user}/>} {active==='store'&&<StorePanel loja={loja} refreshData={refreshData}/>} {active==='plans'&&<Plans/>} {active==='config'&&<ConfigPanel user={user} setUser={setUser}/>}</Shell>;
 }
 
 function Admin({ user, setUser, data, setData, refreshData }) {
@@ -853,7 +877,7 @@ function App(){
             const sent = rows.length;
             const clicks = rows.filter(e => e.clicou).length;
             const rate = sent ? `${Math.round((clicks / sent) * 100)}%` : '0%';
-            return { id: c.id, title: c.titulo, msg: c.mensagem, status: c.status || 'rascunho', audience: c.publico || 'Todos', freq: c.frequencia || 'único', duration: `${c.duracao_dias || 1} dias`, sent, clicks, rate, date: c.created_at ? new Date(c.created_at).toLocaleDateString('pt-BR') : '' };
+            return { id: c.id, title: c.titulo, msg: c.mensagem, link: c.link || '', status: c.status || 'rascunho', audience: c.publico || 'Todos', freq: c.frequencia || 'único', duration: `${c.duracao_dias || 1} dias`, sent, clicks, rate, date: c.created_at ? new Date(c.created_at).toLocaleDateString('pt-BR') : '' };
           })
         }));
       }

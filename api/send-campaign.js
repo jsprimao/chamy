@@ -101,7 +101,7 @@ export default async function handler(req, res) {
     debug.oneSignalPayloadMode = 'individual_click_tracking';
 
     const origin = `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}`;
-    const defaultTarget = campaign.link || origin;
+    const defaultTarget = campaign.link || `${origin}/loja/${campaign.loja_id}`;
     const sentClients = [];
     const oneSignalResults = [];
 
