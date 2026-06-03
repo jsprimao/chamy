@@ -646,15 +646,35 @@ function StorePanel({ loja, refreshData }){
   const widgetCode = `<script src="${window.location.origin}/widget.js" data-loja="${loja?.id || 'ID_DA_LOJA'}"></script>`;
   useEffect(()=>{ setForm({ nome: loja?.nome || '', site: loja?.site || '', whatsapp: loja?.whatsapp || '', cidade: loja?.cidade || '', logo_url: loja?.logo_url || '' }); }, [loja?.id, loja?.logo_url]);
 
-  function handleLogoFile(e){
+  async function handleLogoFile(e){
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith('image/')) return setMsg('Envie uma imagem PNG, JPG ou WEBP.');
-    if (file.size > 900000) return setMsg('A logo precisa ter até 900 KB para esta versão de teste.');
-    const reader = new FileReader();
-    reader.onload = () => setForm(prev => ({...prev, logo_url: reader.result}));
-    reader.onerror = () => setMsg('Não foi possível ler a imagem.');
-    reader.readAsDataURL(file);
+    if (file.size > 2500000) return setMsg('A logo precisa ter até 2,5 MB.');
+    if (!loja?.id) return setMsg('Salve/crie a loja antes de enviar a logo.');
+    try {
+      setMsg('Enviando logo e gerando URL pública...');
+      const ext = (file.name.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png';
+      const safeName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+      const filePath = `${loja.id}/${safeName}`;
+      const { error: uploadError } = await supabase.storage
+        .from('logos')
+        .upload(filePath, file, { cacheControl: '3600', upsert: true, contentType: file.type });
+      if (uploadError) throw uploadError;
+      const { data } = supabase.storage.from('logos').getPublicUrl(filePath);
+      const publicUrl = data?.publicUrl;
+      if (!publicUrl) throw new Error('Não foi possível gerar a URL pública da logo.');
+      setForm(prev => ({...prev, logo_url: publicUrl}));
+      const { error: updateError } = await supabase.from('lojas').update({ logo_url: publicUrl }).eq('id', loja.id);
+      if (updateError) throw updateError;
+      setMsg('Logo enviada com sucesso. A URL pública foi salva automaticamente.');
+      refreshData?.();
+    } catch (error) {
+      console.error(error);
+      setMsg(error.message || 'Falha ao enviar a logo. Confira se o bucket público "logos" existe no Supabase Storage.');
+    } finally {
+      e.target.value = '';
+    }
   }
 
   async function save(){
@@ -673,10 +693,10 @@ function StorePanel({ loja, refreshData }){
         <div className="storeLogoPreview">{form.logo_url ? <img src={form.logo_url} alt="Logo da loja" /> : <Store size={28}/>}</div>
         <div>
           <input type="file" accept="image/png,image/jpeg,image/webp" onChange={handleLogoFile} />
-          <small>Use uma imagem horizontal ou quadrada, de preferência PNG com fundo transparente. Essa logo aparecerá na página pública de captura.</small>
+          <small>Use PNG, JPG ou WEBP. O Chamy envia para o Supabase Storage, gera uma URL pública e usa essa logo na página pública e nas notificações push.</small>
         </div>
       </div>
-      <label>Ou cole a URL da logo</label><input value={form.logo_url} onChange={e=>setForm({...form,logo_url:e.target.value})} placeholder="https://seudominio.com/logo.png" />
+      <label>URL pública da logo</label><input value={form.logo_url} onChange={e=>setForm({...form,logo_url:e.target.value})} placeholder="A URL será gerada automaticamente ao enviar a logo" />
       <label>Nome da loja</label><input value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} placeholder="Nome da sua loja" />
       <label>Site ou catálogo</label><input value={form.site} onChange={e=>setForm({...form,site:e.target.value})} placeholder="https://sualoja.com.br" />
       <div className="two"><div><label>WhatsApp</label><input value={form.whatsapp} onChange={e=>setForm({...form,whatsapp:e.target.value})} placeholder="(12) 99999-9999" /></div><div><label>Cidade/UF</label><input value={form.cidade} onChange={e=>setForm({...form,cidade:e.target.value})} placeholder="Aparecida/SP" /></div></div>
