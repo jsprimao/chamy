@@ -5,9 +5,9 @@ import './styles.css';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 
 const plans = {
-  gratis: { label: 'Grátis', price: 'R$0', limit: 100, badge: 'Teste', features: ['Até 100 inscritos', 'Campanhas manuais', '1 loja', 'Marca Chamy', 'Suporte básico'] },
-  pro: { label: 'Pro', price: 'R$39', limit: 1000, badge: 'Mais indicado', features: ['Até 1.000 inscritos', 'Campanhas programadas', 'Automações', 'Segmentação', 'Sem marca Chamy'] },
-  business: { label: 'Business', price: 'R$149', limit: 10000, badge: 'Empresarial', features: ['Até 10.000 inscritos', 'Múltiplas lojas', 'Múltiplos usuários', 'Integrações/API', 'Suporte prioritário'] }
+  gratis: { label: 'Grátis', price: 'R$0', limit: 100, badge: 'Teste', features: ['Até 100 inscritos', '20 campanhas/mês', '1 loja', 'Link público', 'Marca Chamy'] },
+  pro: { label: 'Pro', price: 'R$39', limit: 1000, badge: 'Mais indicado', features: ['Até 1.000 inscritos', 'Campanhas ilimitadas', 'QR Code da loja', 'Agendamento', 'Sem marca Chamy'] },
+  business: { label: 'Business', price: 'R$149', limit: 10000, badge: 'Empresarial', features: ['Até 10.000 inscritos', 'Automações', 'Segmentação avançada', 'Múltiplos usuários', 'Suporte prioritário'] }
 };
 
 const emptyData = { vendors: [], customers: [], campaigns: [], tickets: [] };
@@ -253,7 +253,7 @@ function Login({ setUser }) {
       <p>A Chamy conecta sua empresa diretamente aos clientes através de notificações inteligentes que aumentam o retorno e geram novas vendas.</p>
       <p>Envie promoções, lançamentos e ofertas em segundos e faça seus clientes voltarem para sua loja, catálogo ou WhatsApp.</p>
       <div className="heroCards"><span>🚀 Notificações instantâneas</span><span>🎯 Clientes interessados na sua marca</span><span>📈 Mais vendas e faturamento</span><span>⚡ Campanhas criadas em poucos cliques</span></div>
-      <p className="heroFoot">Com a Chamy, cada cliente conquistado continua gerando oportunidades de venda.</p>
+      <p className="heroFoot">Com a Chamy, cada cliente conquistado continua gerando oportunidades de venda.</p><div className="heroActions"><Button className="primary bigCta" onClick={() => setMode('signup')}><UserPlus size={18}/> Criar Conta Grátis</Button><Button className="ghostCta" onClick={() => setMode('login')}><Lock size={18}/> Já tenho conta</Button></div>
     </div>
     <Card className="loginBox">
       <img className="loginIcon" src="/app-icon.png" alt="" />
@@ -407,20 +407,29 @@ function Dashboard({ data, user, setActive, loja }) {
 }
 
 const templates = [
-  ['Promoção Relâmpago', Gift, '🔥 Promoção Relâmpago', 'Ofertas especiais por tempo limitado. Clique e aproveite agora!'],
-  ['Novidades da Semana', Sparkles, '✨ Novidades da Semana', 'Chegaram novidades no catálogo. Confira antes que acabem!'],
-  ['Cliente Sumido', RotateCcw, 'Sentimos sua falta!', 'Temos novidades esperando por você.'],
-  ['Carrinho Abandonado', ShoppingCart, 'Você esqueceu produtos', 'Finalize seu pedido em poucos cliques.']
+  ['Promoção Relâmpago', Gift, '🔥 Promoção Relâmpago', 'Oferta especial por tempo limitado. Clique e aproveite antes que acabe!'],
+  ['Novidades da Semana', Sparkles, '✨ Novidades da Semana', 'Chegaram novidades na loja. Clique para conferir os lançamentos!'],
+  ['Lançamento', Rocket, '🚀 Lançamento disponível', 'Tem produto novo esperando por você. Veja agora os detalhes!'],
+  ['Mensagem Especial', Bell, '💛 Mensagem Especial', 'Preparamos uma novidade para você. Clique e confira!']
 ];
 
-function Campaigns({ data, setData, lojaId, refreshData }) {
+function Campaigns({ data, setData, lojaId, refreshData, user }) {
   const [form, setForm] = useState({ title: '🔥 Promoção Relâmpago', msg: 'Ofertas especiais por tempo limitado. Clique e aproveite agora!', link: '', audience: 'Todos', freq: 'A cada 4 horas', duration: '7 dias' });
   const [saving, setSaving] = useState(false);
   async function addCampaign(){
     if (!lojaId) return alert('Nenhuma loja encontrada para este usuário.');
+    const planLimits = getPlanLimits(user?.plan || 'gratis');
+    if (planLimits.campaigns && (data?.campaigns?.length || 0) >= planLimits.campaigns) {
+      return alert(`Você atingiu o limite de ${planLimits.campaigns} campanhas do plano ${planLimits.label}. Faça upgrade para continuar.`);
+    }
+    const link = String(form.link || '').trim();
+    if (!link) return alert('Informe a URL de destino da campanha. Ela pode ser um catálogo, site, promoção ou WhatsApp.');
+    if (!/^https?:\/\//i.test(link)) return alert('A URL de destino precisa começar com https:// ou http://');
+    if (!String(form.title || '').trim()) return alert('Informe o título da campanha.');
+    if (!String(form.msg || '').trim()) return alert('Informe a mensagem da campanha.');
     setSaving(true);
     const duracao = parseInt(form.duration, 10) || 1;
-    const { data: created, error } = await supabase.from('campanhas').insert({ loja_id: lojaId, titulo: form.title, mensagem: form.msg, link: form.link, publico: form.audience, frequencia: form.freq, duracao_dias: duracao, status:'Ativa' }).select('*').single();
+    const { data: created, error } = await supabase.from('campanhas').insert({ loja_id: lojaId, titulo: form.title, mensagem: form.msg, link, publico: form.audience, frequencia: form.freq, duracao_dias: duracao, status:'Ativa' }).select('*').single();
     setSaving(false);
     if (error) return alert(error.message);
     setData({...data, campaigns:[{ id:created.id, title:created.titulo, msg:created.mensagem, link:created.link || '', status:created.status, audience:created.publico, freq:created.frequencia, duration:`${created.duracao_dias} dias`, sent:0, clicks:0, rate:'0%', date:'Agora' }, ...data.campaigns]});
@@ -439,6 +448,7 @@ function Campaigns({ data, setData, lojaId, refreshData }) {
     setData({...data,campaigns:data.campaigns.filter(x=>x.id!==c.id)});
   }
   async function sendCampaign(c){
+    if (!c.link) return alert('Esta campanha não possui URL de destino. Edite ou crie uma nova campanha com link de catálogo, promoção, site ou WhatsApp.');
     if (!confirm(`Enviar a campanha "${c.title}" agora?`)) return;
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -463,19 +473,23 @@ function Campaigns({ data, setData, lojaId, refreshData }) {
     }
   }
   function testNotify(){ if(!('Notification' in window)) return alert('Seu navegador não suporta notificações.'); Notification.requestPermission().then(p=> p==='granted' ? new Notification(form.title,{body:form.msg,icon:'/favicon.png'}) : alert('Permissão de notificação negada.')); }
-  return <div className="campaignPage"><Card className="creator"><h3>Nova campanha</h3><p className="muted">Escolha um modelo pronto ou personalize.</p><div className="templates">{templates.map(([name,Icon,title,msg])=><button key={name} onClick={()=>setForm({...form,title,msg})}><Icon/><b>{name}</b></button>)}</div><label>Título</label><input value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/><label>Mensagem</label><textarea value={form.msg} onChange={e=>setForm({...form,msg:e.target.value})}/><label>URL de destino da campanha</label><input value={form.link} onChange={e=>setForm({...form,link:e.target.value})} placeholder="https://catalogo.com.br/promocao ou https://wa.me/55..."/><p className="miniNote">Se deixar vazio, o clique abrirá automaticamente a página pública da sua loja.</p><div className="two"><div><label>Público</label><select value={form.audience} onChange={e=>setForm({...form,audience:e.target.value})}><option>Todos</option><option>Promoções</option><option>Clientes inativos</option><option>Quem clicou na última campanha</option></select></div><div><label>Frequência</label><select value={form.freq} onChange={e=>setForm({...form,freq:e.target.value})}><option>A cada 4 horas</option><option>Diária</option><option>Semanal</option><option>Envio único</option></select></div></div><label>Duração</label><select value={form.duration} onChange={e=>setForm({...form,duration:e.target.value})}><option>7 dias</option><option>3 dias</option><option>1 dia</option><option>Até pausar</option></select><label className="check"><input type="checkbox" defaultChecked/> Não enviar de madrugada</label><label className="check"><input type="checkbox" defaultChecked/> Não repetir para quem já clicou</label><div className="two"><Button className="primary" onClick={addCampaign} disabled={saving}><Play size={17}/> {saving ? 'Salvando...' : 'Iniciar campanha'}</Button><Button onClick={testNotify}><Bell size={17}/> Testar notificação</Button></div></Card><Card><div className="cardHead"><h3>Campanhas</h3><Badge>{data.campaigns.length} criadas</Badge></div><CampaignList data={data} onToggle={toggleCampaign} onDelete={deleteCampaign} onSend={sendCampaign}/></Card></div>;
+  return <div className="campaignPage"><Card className="creator"><h3>Nova campanha</h3><p className="muted">Escolha um modelo pronto ou personalize.</p><div className="templates">{templates.map(([name,Icon,title,msg])=><button key={name} onClick={()=>setForm({...form,title,msg})}><Icon/><b>{name}</b></button>)}</div><label>Título</label><input value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/><label>Mensagem</label><textarea value={form.msg} onChange={e=>setForm({...form,msg:e.target.value})}/><label>URL de destino da campanha <b className="required">obrigatória</b></label><input value={form.link} onChange={e=>setForm({...form,link:e.target.value})} placeholder="https://catalogo.com.br/promocao ou https://wa.me/55..."/><p className="miniNote">Obrigatório: ao clicar na notificação, o cliente deve ir para uma oferta, catálogo, site ou WhatsApp. Assim a campanha gera venda de verdade.</p><div className="two"><div><label>Público</label><select value={form.audience} onChange={e=>setForm({...form,audience:e.target.value})}><option>Todos</option><option>Promoções</option><option>Clientes inativos</option><option>Quem clicou na última campanha</option></select></div><div><label>Frequência</label><select value={form.freq} onChange={e=>setForm({...form,freq:e.target.value})}><option>A cada 4 horas</option><option>Diária</option><option>Semanal</option><option>Envio único</option></select></div></div><label>Duração</label><select value={form.duration} onChange={e=>setForm({...form,duration:e.target.value})}><option>7 dias</option><option>3 dias</option><option>1 dia</option><option>Até pausar</option></select><label className="check"><input type="checkbox" defaultChecked/> Não enviar de madrugada</label><label className="check"><input type="checkbox" defaultChecked/> Não repetir para quem já clicou</label><div className="two"><Button className="primary" onClick={addCampaign} disabled={saving}><Play size={17}/> {saving ? 'Salvando...' : 'Iniciar campanha'}</Button><Button onClick={testNotify}><Bell size={17}/> Testar notificação</Button></div></Card><Card><div className="cardHead"><h3>Campanhas</h3><Badge>{data.campaigns.length} criadas</Badge></div><CampaignList data={data} onToggle={toggleCampaign} onDelete={deleteCampaign} onSend={sendCampaign}/></Card></div>;
 }
 
 function CampaignList({ data, onToggle, onDelete, onSend }) {
   if (!data.campaigns.length) return <p className="muted">Nenhuma campanha criada ainda.</p>;
-  return <div className="campaignList">{data.campaigns.map(c=><div className="campaign" key={c.id}><div className="thumb"><Send/></div><div><b>{c.title}</b><p>{c.msg}</p><small>{c.freq} • {c.duration} • {c.audience}{c.link ? ` • destino configurado` : ' • destino: página pública'}</small></div><div className="metrics"><span><b>{c.sent}</b>Enviados</span><span><b>{c.clicks}</b>Cliques</span><span><b>{c.rate}</b>Taxa</span><Badge tone={c.status==='Ativa'?'green':c.status==='Programada'?'violet':'gray'}>{c.status}</Badge>{onToggle&&<><Button className="primary" onClick={()=>onSend?.(c)}><Send size={16}/> Enviar agora</Button><Button onClick={()=>onToggle(c)}>{c.status==='Ativa'?<Pause size={16}/>:<Play size={16}/>}</Button><Button onClick={()=>onDelete(c)}><Trash2 size={16}/></Button></>}<MoreVertical size={18}/></div></div>)}</div>;
+  return <div className="campaignList">{data.campaigns.map(c=><div className="campaign" key={c.id}><div className="thumb"><Send/></div><div><b>{c.title}</b><p>{c.msg}</p><small>{c.freq} • {c.duration} • {c.audience}{c.link ? ` • destino configurado` : ' • sem destino'}</small></div><div className="metrics"><span><b>{c.sent}</b>Enviados</span><span><b>{c.clicks}</b>Cliques</span><span><b>{c.rate}</b>Taxa</span><Badge tone={c.status==='Ativa'?'green':c.status==='Programada'?'violet':'gray'}>{c.status}</Badge>{onToggle&&<><Button className="primary" onClick={()=>onSend?.(c)}><Send size={16}/> Enviar agora</Button><Button onClick={()=>onToggle(c)}>{c.status==='Ativa'?<Pause size={16}/>:<Play size={16}/>}</Button><Button onClick={()=>onDelete(c)}><Trash2 size={16}/></Button></>}<MoreVertical size={18}/></div></div>)}</div>;
 }
 
-function Customers({ data, setData, lojaId, refreshData }) {
+function Customers({ data, setData, lojaId, refreshData, user }) {
   const [q,setQ]=useState('');
   const rows=data.customers.filter(c=>(c.name+c.city+c.interest+c.status).toLowerCase().includes(q.toLowerCase()));
   async function add(){
     if (!lojaId) return alert('Nenhuma loja encontrada para este usuário.');
+    const planLimits = getPlanLimits(user?.plan || 'gratis');
+    if ((data?.customers?.length || 0) >= planLimits.subscribers) {
+      return alert(`Você atingiu o limite de ${planLimits.subscribers.toLocaleString('pt-BR')} inscritos do plano ${planLimits.label}. Faça upgrade para captar mais clientes.`);
+    }
     const name=prompt('Nome do cliente/inscrito:'); if(!name) return;
     const whats=prompt('WhatsApp do cliente:') || '';
     const city=prompt('Cidade/UF:') || '';
@@ -494,6 +508,8 @@ function Capture({ loja, data, setData, refreshData, user }){
   const widgetCode = `<script src="https://chamy.vercel.app/widget.js" data-loja="${loja?.id || 'ID_DA_LOJA'}"></script>`;
   async function activatePush(){
     if (!loja?.id) return setStatus('Nenhuma loja vinculada ao usuário.');
+    const planLimits = getPlanLimits(user?.plan || 'gratis');
+    if ((data?.customers?.length || 0) >= planLimits.subscribers) return setStatus(`Limite do plano ${planLimits.label} atingido: ${planLimits.subscribers.toLocaleString('pt-BR')} inscritos.`);
     try {
       setLoading(true);
       setStatus('Solicitando permissão do navegador...');
@@ -656,7 +672,7 @@ function PublicCapture(){
   </div>;
 }
 
-function StorePanel({ loja, refreshData }){
+function StorePanel({ loja, refreshData, user }){
   const [form, setForm] = useState({
     nome: loja?.nome || '',
     site: loja?.site || '',
@@ -733,7 +749,7 @@ function StorePanel({ loja, refreshData }){
       <label>Link público da loja</label><div className="copyBox"><code>{publicLink}</code><Button onClick={()=>navigator.clipboard?.writeText(publicLink)}><Copy size={16}/> Copiar</Button></div><p className="miniNote">Este é o link estável da captura pública. Ele usa o ID da loja para evitar erro quando o nome da loja muda.</p>
       <label>Código do widget</label><pre>{widgetCode}</pre>
       <Button onClick={()=>navigator.clipboard?.writeText(widgetCode)}><Copy size={16}/> Copiar widget</Button>
-      <div className="qrBox"><div><QrCode/><b>QR Code da loja</b><span>Use em balcão, embalagem, cartão, evento ou grupos de WhatsApp para captar inscritos rapidamente.</span></div><img src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(publicLink)}`} alt="QR Code da loja"/><div className="two"><Button onClick={()=>window.open(publicLink, '_blank')}><ExternalLink size={16}/> Abrir página</Button><Button onClick={()=>{const a=document.createElement('a');a.href=`https://api.qrserver.com/v1/create-qr-code/?size=800x800&data=${encodeURIComponent(publicLink)}`;a.download='qrcode-chamy.png';a.click();}}><QrCode size={16}/> Baixar QR</Button></div></div><div className="installHelp"><b>📲 Dica para celular</b><span>Oriente seus clientes a adicionarem a página à tela inicial. No Android isso melhora a experiência e deixa as notificações mais parecidas com app.</span></div>
+      {normalizePlan(user?.plan || 'gratis') === 'gratis' ? <div className="qrLocked"><QrCode/><b>QR Code da loja</b><span>Disponível nos planos Pro e Business. Use para captar inscritos em balcão, embalagens, cartões e eventos.</span><Button onClick={()=>alert('Upgrade para Pro liberará QR Code e agendamento.')}>Liberar QR Code</Button></div> : <div className="qrBox"><div><QrCode/><b>QR Code da loja</b><span>Use em balcão, embalagem, cartão, evento ou grupos de WhatsApp para captar inscritos rapidamente.</span></div><img src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(publicLink)}`} alt="QR Code da loja"/><div className="two"><Button onClick={()=>window.open(publicLink, '_blank')}><ExternalLink size={16}/> Abrir página</Button><Button onClick={()=>{const a=document.createElement('a');a.href=`https://api.qrserver.com/v1/create-qr-code/?size=800x800&data=${encodeURIComponent(publicLink)}`;a.download='qrcode-chamy.png';a.click();}}><QrCode size={16}/> Baixar QR</Button></div></div>}<div className="installHelp"><b>📲 Dica para celular</b><span>Oriente seus clientes a adicionarem a página à tela inicial. No Android isso melhora a experiência e deixa as notificações mais parecidas com app.</span></div>
     </Card>
   </div>;
 }
@@ -810,7 +826,7 @@ function TargetIcon(){ return <Users size={20}/>; }
 
 function Seller({ user, setUser, data, setData, loja, refreshData }) {
   const [active,setActive]=useState('dash');
-  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={sellerMenu} data={data}>{active==='dash'&&<Dashboard data={data} user={user} setActive={setActive} loja={loja}/>} {active==='camp'&&<Campaigns data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData}/>} {active==='auto'&&<Automations/>} {active==='clients'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData}/>} {active==='capture'&&<Capture loja={loja} data={data} setData={setData} refreshData={refreshData} user={user}/>} {active==='segments'&&<Segments data={data}/>} {active==='reports'&&<Reports data={data} user={user}/>} {active==='store'&&<StorePanel loja={loja} refreshData={refreshData}/>} {active==='plans'&&<Plans/>} {active==='config'&&<ConfigPanel user={user} setUser={setUser}/>}</Shell>;
+  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={sellerMenu} data={data}>{active==='dash'&&<Dashboard data={data} user={user} setActive={setActive} loja={loja}/>} {active==='camp'&&<Campaigns data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData} user={user}/>} {active==='auto'&&<Automations/>} {active==='clients'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData} user={user}/>} {active==='capture'&&<Capture loja={loja} data={data} setData={setData} refreshData={refreshData} user={user}/>} {active==='segments'&&<Segments data={data}/>} {active==='reports'&&<Reports data={data} user={user}/>} {active==='store'&&<StorePanel loja={loja} refreshData={refreshData} user={user}/>} {active==='plans'&&<Plans/>} {active==='config'&&<ConfigPanel user={user} setUser={setUser}/>}</Shell>;
 }
 
 function Admin({ user, setUser, data, setData, refreshData }) {
@@ -877,7 +893,7 @@ function App(){
             const sent = rows.length;
             const clicks = rows.filter(e => e.clicou).length;
             const rate = sent ? `${Math.round((clicks / sent) * 100)}%` : '0%';
-            return { id: c.id, title: c.titulo, msg: c.mensagem, link: c.link || '', status: c.status || 'rascunho', audience: c.publico || 'Todos', freq: c.frequencia || 'único', duration: `${c.duracao_dias || 1} dias`, sent, clicks, rate, date: c.created_at ? new Date(c.created_at).toLocaleDateString('pt-BR') : '' };
+            return { id: c.id, title: c.titulo, msg: c.mensagem, link: c.link || '', status: c.status || 'rascunho', audience: c.publico || 'Todos', freq: c.frequencia || 'único', duration: `${c.duracao_dias || 1} dias`, sent, clicks, rate, date: c.created_at ? new Date(c.created_at).toLocaleDateString('pt-BR') : '', createdAt: c.created_at }; 
           })
         }));
       }

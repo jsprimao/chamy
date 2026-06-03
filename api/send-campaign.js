@@ -100,8 +100,12 @@ export default async function handler(req, res) {
     debug.step = 'enviando para OneSignal';
     debug.oneSignalPayloadMode = 'individual_click_tracking';
 
+    if (!campaign.link || !/^https?:\/\//i.test(String(campaign.link))) {
+      return json(res, 400, { ok: false, error: 'Campanha sem URL de destino válida. Informe um link de catálogo, promoção, site ou WhatsApp antes de enviar.', debug });
+    }
+
     const origin = `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}`;
-    const defaultTarget = campaign.link || `${origin}/loja/${campaign.loja_id}`;
+    const defaultTarget = campaign.link;
     const sentClients = [];
     const oneSignalResults = [];
 
