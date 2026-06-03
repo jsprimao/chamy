@@ -226,9 +226,12 @@ function Login({ setUser }) {
   return <div className="loginScreen">
     <div className="loginHero">
       <Logo />
-      <h1>Notificações que trazem clientes de volta para comprar.</h1>
-      <p>Crie campanhas de promoções, novidades e lembretes em poucos cliques. Seus clientes autorizam o recebimento e voltam direto para sua loja, catálogo ou WhatsApp.</p>
-      <div className="heroCards"><span>Promoções em 1 clique</span><span>Clientes inscritos</span><span>Relatórios reais</span><span>Menos dependência do WhatsApp</span></div>
+      <span className="heroTag">Notificações inteligentes para vender mais</span>
+      <h1>Seus clientes estão a um clique de voltar a comprar.</h1>
+      <p>A Chamy conecta sua empresa diretamente aos clientes através de notificações inteligentes que aumentam o retorno e geram novas vendas.</p>
+      <p>Envie promoções, lançamentos e ofertas em segundos e faça seus clientes voltarem para sua loja, catálogo ou WhatsApp.</p>
+      <div className="heroCards"><span>🚀 Notificações instantâneas</span><span>🎯 Clientes interessados na sua marca</span><span>📈 Mais vendas e faturamento</span><span>⚡ Campanhas criadas em poucos cliques</span></div>
+      <p className="heroFoot">Com a Chamy, cada cliente conquistado continua gerando oportunidades de venda.</p>
     </div>
     <Card className="loginBox">
       <img className="loginIcon" src="/app-icon.png" alt="" />
@@ -610,7 +613,9 @@ function PublicCapture(){
 
   return <div className="publicPage">
     <Card className="publicCard">
-      <Logo />
+      <div className="publicStoreBrand">
+        {loja.logo_url ? <img src={loja.logo_url} alt={loja.nome} /> : <Logo />}
+      </div>
       <Badge tone="green">Inscrição gratuita</Badge>
       <h1>Receba promoções e novidades da {loja.nome}</h1>
       <p className="publicLead">Cadastre-se para ser avisado quando chegarem ofertas, lançamentos e campanhas especiais. Você pode bloquear as notificações quando quiser no seu navegador.</p>
@@ -622,6 +627,7 @@ function PublicCapture(){
         <Button className="primary" disabled={loading || done}>{done ? <CheckCircle2 size={17}/> : <Bell size={17}/>} {done ? 'Notificações ativadas' : loading ? 'Ativando...' : 'Quero receber avisos'}</Button>
       </form>
       <div className="publicBenefits"><span><Gift/> Promoções</span><span><Sparkles/> Novidades</span><span><ShieldCheck/> Cadastro seguro</span></div>
+      <p className="poweredBy">Notificações inteligentes por <b>Chamy</b></p>
     </Card>
   </div>;
 }
@@ -631,24 +637,46 @@ function StorePanel({ loja, refreshData }){
     nome: loja?.nome || '',
     site: loja?.site || '',
     whatsapp: loja?.whatsapp || '',
-    cidade: loja?.cidade || ''
+    cidade: loja?.cidade || '',
+    logo_url: loja?.logo_url || ''
   });
   const [msg, setMsg] = useState('');
   const slug = slugify(loja?.nome || 'minha-loja');
   const publicLink = `${window.location.origin}/loja/${loja?.id || slug}`;
   const widgetCode = `<script src="${window.location.origin}/widget.js" data-loja="${loja?.id || 'ID_DA_LOJA'}"></script>`;
-  useEffect(()=>{ setForm({ nome: loja?.nome || '', site: loja?.site || '', whatsapp: loja?.whatsapp || '', cidade: loja?.cidade || '' }); }, [loja?.id]);
+  useEffect(()=>{ setForm({ nome: loja?.nome || '', site: loja?.site || '', whatsapp: loja?.whatsapp || '', cidade: loja?.cidade || '', logo_url: loja?.logo_url || '' }); }, [loja?.id, loja?.logo_url]);
+
+  function handleLogoFile(e){
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) return setMsg('Envie uma imagem PNG, JPG ou WEBP.');
+    if (file.size > 900000) return setMsg('A logo precisa ter até 900 KB para esta versão de teste.');
+    const reader = new FileReader();
+    reader.onload = () => setForm(prev => ({...prev, logo_url: reader.result}));
+    reader.onerror = () => setMsg('Não foi possível ler a imagem.');
+    reader.readAsDataURL(file);
+  }
+
   async function save(){
     if (!loja?.id) return setMsg('Nenhuma loja vinculada ao usuário.');
     setMsg('Salvando dados da loja...');
-    const { error } = await supabase.from('lojas').update({ nome: form.nome, site: form.site, whatsapp: form.whatsapp, cidade: form.cidade }).eq('id', loja.id);
+    const { error } = await supabase.from('lojas').update({ nome: form.nome, site: form.site, whatsapp: form.whatsapp, cidade: form.cidade, logo_url: form.logo_url || null }).eq('id', loja.id);
     if (error) return setMsg(error.message);
-    setMsg('Dados da loja salvos com sucesso.');
+    setMsg('Dados da loja salvos com sucesso. A página pública já usará a nova logo.');
     refreshData?.();
   }
   return <div className="storeGrid">
     <Card>
       <div className="cardHead"><h3>Dados da Loja</h3><Badge tone={loja?.status === 'ativa' ? 'green' : 'gray'}>{loja?.status || 'ativa'}</Badge></div>
+      <label>Logo da loja</label>
+      <div className="logoUploadBox">
+        <div className="storeLogoPreview">{form.logo_url ? <img src={form.logo_url} alt="Logo da loja" /> : <Store size={28}/>}</div>
+        <div>
+          <input type="file" accept="image/png,image/jpeg,image/webp" onChange={handleLogoFile} />
+          <small>Use uma imagem horizontal ou quadrada, de preferência PNG com fundo transparente. Essa logo aparecerá na página pública de captura.</small>
+        </div>
+      </div>
+      <label>Ou cole a URL da logo</label><input value={form.logo_url} onChange={e=>setForm({...form,logo_url:e.target.value})} placeholder="https://seudominio.com/logo.png" />
       <label>Nome da loja</label><input value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} placeholder="Nome da sua loja" />
       <label>Site ou catálogo</label><input value={form.site} onChange={e=>setForm({...form,site:e.target.value})} placeholder="https://sualoja.com.br" />
       <div className="two"><div><label>WhatsApp</label><input value={form.whatsapp} onChange={e=>setForm({...form,whatsapp:e.target.value})} placeholder="(12) 99999-9999" /></div><div><label>Cidade/UF</label><input value={form.cidade} onChange={e=>setForm({...form,cidade:e.target.value})} placeholder="Aparecida/SP" /></div></div>
