@@ -21,6 +21,77 @@ function nicePlan(plan = 'gratis') { return plans[normalizePlan(plan)]?.label ||
 function slugify(text = '') { return String(text || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'') || 'loja'; }
 function isUuid(value = '') { return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim()); }
 
+function wait(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+function normalizeStoreStatus(status = '') {
+  return String(status || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+function getPublicStoreParam() {
+  const parts = window.location.pathname.split('/').filter(Boolean);
+  if (parts[0] !== 'loja') return '';
+  return decodeURIComponent(parts[1] || '').trim();
+}
+function withTimeout(promise, ms, message) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message || 'A operação demorou demais. Tente novamente.')), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+async function imageFileToElement(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.decoding = 'async';
+    img.src = url;
+    await img.decode();
+    return img;
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+}
+function canvasToBlob(canvas, type = 'image/jpeg', quality = 0.86) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Não foi possível processar a imagem.')), type, quality);
+  });
+}
+async function prepareCampaignImage(file) {
+  if (!file) return null;
+  if (!file.type.startsWith('image/')) throw new Error('Envie uma imagem PNG, JPG ou WEBP.');
+  if (file.size > 8 * 1024 * 1024) throw new Error('A imagem original precisa ter até 8 MB. O Chamy ajusta automaticamente para o tamanho ideal.');
+
+  const targetW = 1200;
+  const targetH = 628;
+  const img = await imageFileToElement(file);
+  const canvas = document.createElement('canvas');
+  canvas.width = targetW;
+  canvas.height = targetH;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, targetW, targetH);
+
+  const bgScale = Math.max(targetW / img.width, targetH / img.height);
+  const bgW = img.width * bgScale;
+  const bgH = img.height * bgScale;
+  ctx.save();
+  ctx.globalAlpha = 0.18;
+  ctx.filter = 'blur(18px)';
+  ctx.drawImage(img, (targetW - bgW) / 2, (targetH - bgH) / 2, bgW, bgH);
+  ctx.restore();
+
+  const scale = Math.min(targetW / img.width, targetH / img.height);
+  const drawW = img.width * scale;
+  const drawH = img.height * scale;
+  ctx.drawImage(img, (targetW - drawW) / 2, (targetH - drawH) / 2, drawW, drawH);
+
+  let blob = await canvasToBlob(canvas, 'image/jpeg', 0.86);
+  if (blob.size > 1024 * 1024) blob = await canvasToBlob(canvas, 'image/jpeg', 0.74);
+  if (blob.size > 1024 * 1024) blob = await canvasToBlob(canvas, 'image/jpeg', 0.62);
+
+  return new File([blob], `chamy-campanha-${Date.now()}.jpg`, { type: 'image/jpeg' });
+}
+
+
 
 function parsePct(rate) {
   if (typeof rate === 'number') return rate;
@@ -37,15 +108,12 @@ function getPlanLimits(planKey = 'gratis') {
 
 async function uploadCampaignImage(file, lojaId) {
   if (!file) return '';
-  if (!file.type.startsWith('image/')) throw new Error('Envie uma imagem PNG, JPG ou WEBP.');
-  if (file.size > 1200000) throw new Error('A imagem da campanha precisa ter até 1 MB.');
   if (!lojaId) throw new Error('Loja não encontrada para enviar a imagem.');
-  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
-  const safeName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-  const filePath = `${lojaId}/${safeName}`;
+  const preparedFile = await prepareCampaignImage(file);
+  const filePath = `${lojaId}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
   const { error } = await supabase.storage
     .from('campanhas')
-    .upload(filePath, file, { cacheControl: '3600', upsert: true, contentType: file.type });
+    .upload(filePath, preparedFile, { cacheControl: '3600', upsert: true, contentType: 'image/jpeg' });
   if (error) throw error;
   const { data } = supabase.storage.from('campanhas').getPublicUrl(filePath);
   if (!data?.publicUrl) throw new Error('Não foi possível gerar URL pública da imagem.');
@@ -448,15 +516,32 @@ function Campaigns({ data, setData, lojaId, refreshData, user }) {
   });
   const [imagePreview, setImagePreview] = useState('');
   const [imageFile, setImageFile] = useState(null);
+  const [imageNote, setImageNote] = useState('');
   const [saving, setSaving] = useState(false);
 
   function applyTemplate(title, msg) {
     setForm(prev => ({ ...prev, title, msg }));
   }
 
-  function selectImage(file) {
-    setImageFile(file || null);
-    setImagePreview(file ? URL.createObjectURL(file) : '');
+  async function selectImage(file) {
+    if (!file) {
+      setImageFile(null);
+      setImagePreview('');
+      setImageNote('');
+      return;
+    }
+    try {
+      setImageNote('Ajustando imagem para o tamanho ideal...');
+      const prepared = await prepareCampaignImage(file);
+      setImageFile(prepared);
+      setImagePreview(URL.createObjectURL(prepared));
+      setImageNote('Imagem ajustada automaticamente para 1200 x 628 px, sem cortar o conteúdo principal.');
+    } catch (e) {
+      setImageFile(null);
+      setImagePreview('');
+      setImageNote('');
+      alert(e.message || 'Não foi possível processar a imagem.');
+    }
   }
 
   async function addCampaign(){
@@ -551,7 +636,7 @@ function Campaigns({ data, setData, lojaId, refreshData, user }) {
   <label>Imagem da campanha {imageLocked && <b className="required">Pro</b>}</label>
   <div className="imageCampaignBox">
     <div className="campaignImagePreview">{imagePreview || form.imageUrl ? <img src={imagePreview || form.imageUrl} alt="Imagem da campanha" /> : <ImageIcon size={28}/>}</div>
-    <div><input type="file" accept="image/png,image/jpeg,image/webp" disabled={imageLocked} onChange={e=>selectImage(e.target.files?.[0])}/><small>{imageLocked ? 'Disponível nos planos Pro e Business.' : 'Opcional. Use PNG, JPG ou WEBP até 1 MB. Aparece como imagem grande nas notificações compatíveis.'}</small></div>
+    <div><input type="file" accept="image/png,image/jpeg,image/webp" disabled={imageLocked} onChange={e=>selectImage(e.target.files?.[0])}/><small>{imageLocked ? 'Disponível nos planos Pro e Business.' : 'Recomendado: 1200 x 628 px. Você pode enviar PNG, JPG ou WEBP; o Chamy ajusta automaticamente para a proporção ideal sem cortar a imagem principal.'}</small>{imageNote && <small className="successTiny">{imageNote}</small>}</div>
   </div>
   <div className="two"><div><label>Público</label><select value={form.audience} onChange={e=>setForm({...form,audience:e.target.value})}><option>Todos</option><option>Promoções</option><option>Novidades</option><option>Clientes inativos</option><option>Quem clicou na última campanha</option></select></div><div><label>Frequência</label><select value={form.freq} onChange={e=>setForm({...form,freq:e.target.value})}><option>Envio único</option><option>A cada 4 horas</option><option>Diária</option><option>Semanal</option></select></div></div>
   <label>Duração</label><select value={form.duration} onChange={e=>setForm({...form,duration:e.target.value})}><option>1 dia</option><option>3 dias</option><option>7 dias</option><option>Até pausar</option></select>
@@ -699,6 +784,7 @@ function PublicCapture(){
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ nome:'', whatsapp:'', cidade:'', interesse:'Todos' });
   const [status, setStatus] = useState('');
+  const [loadingError, setLoadingError] = useState(false);
   const [done, setDone] = useState(false);
   const [showMore, setShowMore] = useState(false);
 
@@ -722,32 +808,42 @@ function PublicCapture(){
     }
 
     async function loadLoja(){
-      if (!supabase) { setStatus('Supabase não configurado.'); setLoading(false); return; }
+      if (!supabase) { setStatus('Supabase não configurado.'); setLoadingError(true); setLoading(false); return; }
       const identifier = getPublicStoreParam();
-      if (!identifier) { setStatus('Link da loja incompleto.'); setLoading(false); return; }
+      if (!identifier) { setStatus('Link da loja incompleto.'); setLoadingError(true); setLoading(false); return; }
+      const hardTimeout = setTimeout(() => {
+        if (alive) {
+          setLoadingError(true);
+          setStatus('A loja demorou para carregar. Verifique sua conexão e tente novamente.');
+          setLoading(false);
+        }
+      }, 9000);
       try {
+        setLoadingError(false);
         setStatus('Carregando loja...');
         let found = null;
         let lastError = null;
-        for (let attempt = 0; attempt < 4; attempt += 1) {
+        for (let attempt = 0; attempt < 5; attempt += 1) {
           try {
-            found = await findLoja(identifier);
+            found = await withTimeout(findLoja(identifier), 4500, 'Tempo de carregamento esgotado.');
             if (found || !alive) break;
           } catch (e) {
             lastError = e;
           }
-          await wait(700);
+          await wait(600);
         }
         if (!alive) return;
         if (found) {
           setLoja(found);
+          setLoadingError(false);
           setStatus('');
         } else {
+          setLoadingError(true);
           setStatus(lastError?.message || 'Não localizamos esta loja. Peça ao vendedor o link público atualizado no menu Loja.');
         }
       } catch (e) {
-        if (alive) setStatus(e.message || 'Erro ao carregar loja.');
-      } finally { if (alive) setLoading(false); }
+        if (alive) { setLoadingError(true); setStatus(e.message || 'Erro ao carregar loja.'); }
+      } finally { clearTimeout(hardTimeout); if (alive) setLoading(false); }
     }
     loadLoja();
     return () => { alive = false; };
@@ -760,7 +856,7 @@ function PublicCapture(){
     try {
       setLoading(true);
       setStatus('Solicitando permissão para notificações...');
-      const result = await requestPushSubscription(`public:${loja.id}:${form.whatsapp || form.nome}`, loja.id);
+      const result = await withTimeout(requestPushSubscription(`public:${loja.id}:${form.whatsapp || form.nome}`, loja.id), 25000, 'Não conseguimos concluir a ativação das notificações. Tente novamente ou use outro navegador.');
       if (result.permission !== 'granted') {
         setStatus('Você precisa permitir as notificações no navegador para concluir o cadastro.');
         return;
@@ -786,7 +882,7 @@ function PublicCapture(){
     } finally { setLoading(false); }
   }
 
-  if (loading && !loja) return <div className="publicPage"><Card className="publicCard"><Logo/><h2>Carregando loja...</h2></Card></div>;
+  if (loading && !loja) return <div className="publicPage"><Card className="publicCard loadingStore"><Logo/><div className="loaderCircle"></div><h2>Carregando loja...</h2><p>{status || 'Buscando informações da loja.'}</p><Button onClick={()=>window.location.reload()}>Tentar novamente</Button></Card></div>;
   if (!loja) return <div className="publicPage"><Card className="publicCard"><Logo/><h2>Loja não encontrada</h2><p>{status || 'Confira o link recebido ou peça um novo convite para a loja.'}</p><div className="two"><Button className="primary" onClick={()=>window.location.reload()}>Tentar novamente</Button><a className="publicLink" href="/">Voltar para o Chamy</a></div></Card></div>;
 
   return <div className="publicPage">
