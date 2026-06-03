@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Bell, BarChart3, Send, Zap, Users, Crown, Settings, Store, LifeBuoy, Plus, Search, Play, Pause, Trash2, Copy, ShieldCheck, MousePointerClick, MessageCircle, TrendingUp, ShoppingCart, Rocket, Gift, Sparkles, RotateCcw, Globe, CheckCircle2, Lock, LogOut, UserPlus, CreditCard, HelpCircle, Menu, MoreVertical, Mail, AlertCircle, QrCode, ExternalLink } from 'lucide-react';
+import { Bell, BarChart3, Send, Zap, Users, Crown, Settings, Store, LifeBuoy, Plus, Search, Play, Pause, Trash2, Copy, ShieldCheck, MousePointerClick, MessageCircle, TrendingUp, ShoppingCart, Rocket, Gift, Sparkles, RotateCcw, Globe, CheckCircle2, Lock, LogOut, UserPlus, CreditCard, HelpCircle, Menu, MoreVertical, Mail, AlertCircle, QrCode, ExternalLink, Image as ImageIcon, CalendarClock } from 'lucide-react';
 import './styles.css';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 
@@ -33,6 +33,23 @@ function getPlanLimits(planKey = 'gratis') {
   if (key === 'business') return { subscribers: 10000, campaigns: null, label: 'Business' };
   if (key === 'pro') return { subscribers: 1000, campaigns: null, label: 'Pro' };
   return { subscribers: 100, campaigns: 20, label: 'Grátis' };
+}
+
+async function uploadCampaignImage(file, lojaId) {
+  if (!file) return '';
+  if (!file.type.startsWith('image/')) throw new Error('Envie uma imagem PNG, JPG ou WEBP.');
+  if (file.size > 1200000) throw new Error('A imagem da campanha precisa ter até 1 MB.');
+  if (!lojaId) throw new Error('Loja não encontrada para enviar a imagem.');
+  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+  const safeName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  const filePath = `${lojaId}/${safeName}`;
+  const { error } = await supabase.storage
+    .from('campanhas')
+    .upload(filePath, file, { cacheControl: '3600', upsert: true, contentType: file.type });
+  if (error) throw error;
+  const { data } = supabase.storage.from('campanhas').getPublicUrl(filePath);
+  if (!data?.publicUrl) throw new Error('Não foi possível gerar URL pública da imagem.');
+  return data.publicUrl;
 }
 
 function calculateAnalytics(data, user) {
@@ -410,12 +427,38 @@ const templates = [
   ['Promoção Relâmpago', Gift, '🔥 Promoção Relâmpago', 'Oferta especial por tempo limitado. Clique e aproveite antes que acabe!'],
   ['Novidades da Semana', Sparkles, '✨ Novidades da Semana', 'Chegaram novidades na loja. Clique para conferir os lançamentos!'],
   ['Lançamento', Rocket, '🚀 Lançamento disponível', 'Tem produto novo esperando por você. Veja agora os detalhes!'],
+  ['Cupom de Desconto', Gift, '🎁 Cupom especial para você', 'Tem desconto especial disponível por tempo limitado. Clique e aproveite!'],
+  ['Últimas Unidades', AlertCircle, '⚠️ Últimas unidades disponíveis', 'Alguns produtos estão acabando. Clique e garanta antes que termine!'],
+  ['Frete Grátis', ShoppingCart, '🚚 Frete grátis hoje', 'Aproveite condição especial por tempo limitado. Clique para ver os detalhes!'],
+  ['Volta ao Estoque', RotateCcw, '📦 Produto voltou ao estoque', 'Aquele produto procurado voltou. Clique e confira agora!'],
   ['Mensagem Especial', Bell, '💛 Mensagem Especial', 'Preparamos uma novidade para você. Clique e confira!']
 ];
 
 function Campaigns({ data, setData, lojaId, refreshData, user }) {
-  const [form, setForm] = useState({ title: '🔥 Promoção Relâmpago', msg: 'Ofertas especiais por tempo limitado. Clique e aproveite agora!', link: '', audience: 'Todos', freq: 'A cada 4 horas', duration: '7 dias' });
+  const [form, setForm] = useState({
+    title: '🔥 Promoção Relâmpago',
+    msg: 'Ofertas especiais por tempo limitado. Clique e aproveite agora!',
+    link: '',
+    audience: 'Todos',
+    freq: 'Envio único',
+    duration: '1 dia',
+    sendMode: 'agora',
+    scheduledAt: '',
+    imageUrl: ''
+  });
+  const [imagePreview, setImagePreview] = useState('');
+  const [imageFile, setImageFile] = useState(null);
   const [saving, setSaving] = useState(false);
+
+  function applyTemplate(title, msg) {
+    setForm(prev => ({ ...prev, title, msg }));
+  }
+
+  function selectImage(file) {
+    setImageFile(file || null);
+    setImagePreview(file ? URL.createObjectURL(file) : '');
+  }
+
   async function addCampaign(){
     if (!lojaId) return alert('Nenhuma loja encontrada para este usuário.');
     const planLimits = getPlanLimits(user?.plan || 'gratis');
@@ -427,14 +470,42 @@ function Campaigns({ data, setData, lojaId, refreshData, user }) {
     if (!/^https?:\/\//i.test(link)) return alert('A URL de destino precisa começar com https:// ou http://');
     if (!String(form.title || '').trim()) return alert('Informe o título da campanha.');
     if (!String(form.msg || '').trim()) return alert('Informe a mensagem da campanha.');
+    if (form.sendMode === 'agendar' && !form.scheduledAt) return alert('Escolha a data e o horário do agendamento.');
+    const scheduledDate = form.sendMode === 'agendar' ? new Date(form.scheduledAt) : null;
+    if (scheduledDate && scheduledDate.getTime() <= Date.now()) return alert('O agendamento precisa ser para uma data/hora futura.');
+
     setSaving(true);
-    const duracao = parseInt(form.duration, 10) || 1;
-    const { data: created, error } = await supabase.from('campanhas').insert({ loja_id: lojaId, titulo: form.title, mensagem: form.msg, link, publico: form.audience, frequencia: form.freq, duracao_dias: duracao, status:'Ativa' }).select('*').single();
-    setSaving(false);
-    if (error) return alert(error.message);
-    setData({...data, campaigns:[{ id:created.id, title:created.titulo, msg:created.mensagem, link:created.link || '', status:created.status, audience:created.publico, freq:created.frequencia, duration:`${created.duracao_dias} dias`, sent:0, clicks:0, rate:'0%', date:'Agora' }, ...data.campaigns]});
-    refreshData?.();
+    try {
+      let finalImageUrl = form.imageUrl || '';
+      if (imageFile) finalImageUrl = await uploadCampaignImage(imageFile, lojaId);
+      const duracao = parseInt(form.duration, 10) || 1;
+      const status = form.sendMode === 'agendar' ? 'Programada' : 'Ativa';
+      const { data: created, error } = await supabase.from('campanhas').insert({
+        loja_id: lojaId,
+        titulo: form.title,
+        mensagem: form.msg,
+        link,
+        imagem_url: finalImageUrl || null,
+        publico: form.audience,
+        frequencia: form.freq,
+        duracao_dias: duracao,
+        status,
+        envio_modo: form.sendMode,
+        agendada_para: scheduledDate ? scheduledDate.toISOString() : null
+      }).select('*').single();
+      if (error) throw error;
+      setData({...data, campaigns:[{ id:created.id, title:created.titulo, msg:created.mensagem, link:created.link || '', imageUrl:created.imagem_url || '', status:created.status, audience:created.publico, freq:created.frequencia, duration:`${created.duracao_dias} dias`, scheduledAt:created.agendada_para, sent:0, clicks:0, rate:'0%', date:'Agora' }, ...data.campaigns]});
+      setImageFile(null);
+      setImagePreview('');
+      refreshData?.();
+      alert(status === 'Programada' ? 'Campanha agendada com sucesso.' : 'Campanha criada com sucesso. Você pode enviar agora na lista de campanhas.');
+    } catch (error) {
+      alert(error.message || 'Falha ao salvar campanha.');
+    } finally {
+      setSaving(false);
+    }
   }
+
   async function toggleCampaign(c){
     const next = c.status === 'Ativa' ? 'Pausada' : 'Ativa';
     const { error } = await supabase.from('campanhas').update({ status: next }).eq('id', c.id);
@@ -472,13 +543,24 @@ function Campaigns({ data, setData, lojaId, refreshData, user }) {
       alert(e.message || 'Falha ao enviar campanha.');
     }
   }
-  function testNotify(){ if(!('Notification' in window)) return alert('Seu navegador não suporta notificações.'); Notification.requestPermission().then(p=> p==='granted' ? new Notification(form.title,{body:form.msg,icon:'/favicon.png'}) : alert('Permissão de notificação negada.')); }
-  return <div className="campaignPage"><Card className="creator"><h3>Nova campanha</h3><p className="muted">Escolha um modelo pronto ou personalize.</p><div className="templates">{templates.map(([name,Icon,title,msg])=><button key={name} onClick={()=>setForm({...form,title,msg})}><Icon/><b>{name}</b></button>)}</div><label>Título</label><input value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/><label>Mensagem</label><textarea value={form.msg} onChange={e=>setForm({...form,msg:e.target.value})}/><label>URL de destino da campanha <b className="required">obrigatória</b></label><input value={form.link} onChange={e=>setForm({...form,link:e.target.value})} placeholder="https://catalogo.com.br/promocao ou https://wa.me/55..."/><p className="miniNote">Obrigatório: ao clicar na notificação, o cliente deve ir para uma oferta, catálogo, site ou WhatsApp. Assim a campanha gera venda de verdade.</p><div className="two"><div><label>Público</label><select value={form.audience} onChange={e=>setForm({...form,audience:e.target.value})}><option>Todos</option><option>Promoções</option><option>Clientes inativos</option><option>Quem clicou na última campanha</option></select></div><div><label>Frequência</label><select value={form.freq} onChange={e=>setForm({...form,freq:e.target.value})}><option>A cada 4 horas</option><option>Diária</option><option>Semanal</option><option>Envio único</option></select></div></div><label>Duração</label><select value={form.duration} onChange={e=>setForm({...form,duration:e.target.value})}><option>7 dias</option><option>3 dias</option><option>1 dia</option><option>Até pausar</option></select><label className="check"><input type="checkbox" defaultChecked/> Não enviar de madrugada</label><label className="check"><input type="checkbox" defaultChecked/> Não repetir para quem já clicou</label><div className="two"><Button className="primary" onClick={addCampaign} disabled={saving}><Play size={17}/> {saving ? 'Salvando...' : 'Iniciar campanha'}</Button><Button onClick={testNotify}><Bell size={17}/> Testar notificação</Button></div></Card><Card><div className="cardHead"><h3>Campanhas</h3><Badge>{data.campaigns.length} criadas</Badge></div><CampaignList data={data} onToggle={toggleCampaign} onDelete={deleteCampaign} onSend={sendCampaign}/></Card></div>;
+  function testNotify(){ if(!('Notification' in window)) return alert('Seu navegador não suporta notificações.'); Notification.requestPermission().then(p=> p==='granted' ? new Notification(form.title,{body:form.msg,icon:'/favicon.png', image:imagePreview || form.imageUrl || undefined}) : alert('Permissão de notificação negada.')); }
+  const planKey = normalizePlan(user?.plan || 'gratis');
+  const imageLocked = planKey === 'gratis';
+  const scheduleLocked = planKey === 'gratis';
+  return <div className="campaignPage"><Card className="creator"><h3>Nova campanha</h3><p className="muted">Escolha um modelo pronto ou personalize. Campanhas com imagem chamam mais atenção e são liberadas no plano Pro.</p><div className="templates">{templates.map(([name,Icon,title,msg])=><button key={name} onClick={()=>applyTemplate(title,msg)}><Icon/><b>{name}</b></button>)}</div><label>Título</label><input value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/><label>Mensagem</label><textarea value={form.msg} onChange={e=>setForm({...form,msg:e.target.value})}/><label>URL de destino da campanha <b className="required">obrigatória</b></label><input value={form.link} onChange={e=>setForm({...form,link:e.target.value})} placeholder="https://catalogo.com.br/promocao ou https://wa.me/55..."/><p className="miniNote">Ao clicar na notificação, o cliente deve ir direto para uma oferta, catálogo, site ou WhatsApp.</p>
+  <label>Imagem da campanha {imageLocked && <b className="required">Pro</b>}</label>
+  <div className="imageCampaignBox">
+    <div className="campaignImagePreview">{imagePreview || form.imageUrl ? <img src={imagePreview || form.imageUrl} alt="Imagem da campanha" /> : <ImageIcon size={28}/>}</div>
+    <div><input type="file" accept="image/png,image/jpeg,image/webp" disabled={imageLocked} onChange={e=>selectImage(e.target.files?.[0])}/><small>{imageLocked ? 'Disponível nos planos Pro e Business.' : 'Opcional. Use PNG, JPG ou WEBP até 1 MB. Aparece como imagem grande nas notificações compatíveis.'}</small></div>
+  </div>
+  <div className="two"><div><label>Público</label><select value={form.audience} onChange={e=>setForm({...form,audience:e.target.value})}><option>Todos</option><option>Promoções</option><option>Novidades</option><option>Clientes inativos</option><option>Quem clicou na última campanha</option></select></div><div><label>Frequência</label><select value={form.freq} onChange={e=>setForm({...form,freq:e.target.value})}><option>Envio único</option><option>A cada 4 horas</option><option>Diária</option><option>Semanal</option></select></div></div>
+  <label>Duração</label><select value={form.duration} onChange={e=>setForm({...form,duration:e.target.value})}><option>1 dia</option><option>3 dias</option><option>7 dias</option><option>Até pausar</option></select>
+  <div className="scheduleBox"><label>Modo de envio {scheduleLocked && <b className="required">Pro</b>}</label><div className="two"><button type="button" className={form.sendMode==='agora'?'choice active':'choice'} onClick={()=>setForm({...form,sendMode:'agora'})}><Send size={16}/> Criar para enviar agora</button><button type="button" className={form.sendMode==='agendar'?'choice active':'choice'} disabled={scheduleLocked} onClick={()=>setForm({...form,sendMode:'agendar'})}><CalendarClock size={16}/> Agendar envio</button></div>{form.sendMode==='agendar' && <><label>Data e horário do envio</label><input type="datetime-local" value={form.scheduledAt} onChange={e=>setForm({...form,scheduledAt:e.target.value})}/><p className="miniNote">O envio agendado depende da função automática do servidor. Configure SUPABASE_SERVICE_ROLE_KEY na Vercel para processar agendamentos.</p></>}</div>
+  <label className="check"><input type="checkbox" defaultChecked/> Não enviar de madrugada</label><label className="check"><input type="checkbox" defaultChecked/> Não repetir para quem já clicou</label><div className="two"><Button className="primary" onClick={addCampaign} disabled={saving}><Play size={17}/> {saving ? 'Salvando...' : form.sendMode==='agendar' ? 'Agendar campanha' : 'Salvar campanha'}</Button><Button onClick={testNotify}><Bell size={17}/> Testar notificação</Button></div></Card><Card><div className="cardHead"><h3>Campanhas</h3><Badge>{data.campaigns.length} criadas</Badge></div><CampaignList data={data} onToggle={toggleCampaign} onDelete={deleteCampaign} onSend={sendCampaign}/></Card></div>;
 }
 
 function CampaignList({ data, onToggle, onDelete, onSend }) {
-  if (!data.campaigns.length) return <p className="muted">Nenhuma campanha criada ainda.</p>;
-  return <div className="campaignList">{data.campaigns.map(c=><div className="campaign" key={c.id}><div className="thumb"><Send/></div><div><b>{c.title}</b><p>{c.msg}</p><small>{c.freq} • {c.duration} • {c.audience}{c.link ? ` • destino configurado` : ' • sem destino'}</small></div><div className="metrics"><span><b>{c.sent}</b>Enviados</span><span><b>{c.clicks}</b>Cliques</span><span><b>{c.rate}</b>Taxa</span><Badge tone={c.status==='Ativa'?'green':c.status==='Programada'?'violet':'gray'}>{c.status}</Badge>{onToggle&&<><Button className="primary" onClick={()=>onSend?.(c)}><Send size={16}/> Enviar agora</Button><Button onClick={()=>onToggle(c)}>{c.status==='Ativa'?<Pause size={16}/>:<Play size={16}/>}</Button><Button onClick={()=>onDelete(c)}><Trash2 size={16}/></Button></>}<MoreVertical size={18}/></div></div>)}</div>;
+  return <div className="campaignList">{data.campaigns.map(c=><div className="campaign" key={c.id}>{c.imageUrl && <img className="campaignThumb" src={c.imageUrl} alt=""/>}<div className="campaignInfo"><h4>{c.title}</h4><p>{c.msg}</p><small>{c.freq} • {c.duration}{c.scheduledAt ? ` • agendada: ${new Date(c.scheduledAt).toLocaleString('pt-BR')}` : ''}</small>{c.link && <small className="campaignLink">Destino: {c.link}</small>}</div><div className="metrics"><span><b>{c.sent}</b>Enviados</span><span><b>{c.clicks}</b>Cliques</span><span><b>{c.rate}</b>Taxa</span><Badge tone={c.status==='Ativa'?'green':c.status==='Programada'?'violet':c.status==='Enviada'?'blue':'gray'}>{c.status}</Badge>{onToggle&&<><Button className="primary" onClick={()=>onSend?.(c)}><Send size={16}/> Enviar agora</Button><Button onClick={()=>onToggle(c)}>{c.status==='Ativa'?<Pause size={16}/>:<Play size={16}/>}</Button><Button onClick={()=>onDelete(c)}><Trash2 size={16}/></Button></>}<MoreVertical size={18}/></div></div>)}</div>;
 }
 
 function Customers({ data, setData, lojaId, refreshData, user }) {
@@ -577,42 +659,98 @@ function Reports({ data, user }){
   </>;
 }
 
+
+function PWAInstallTip({ compact = false }) {
+  const [promptEvent, setPromptEvent] = useState(null);
+  const [installed, setInstalled] = useState(false);
+
+  useEffect(() => {
+    const beforeInstall = (event) => {
+      event.preventDefault();
+      setPromptEvent(event);
+    };
+    const installedHandler = () => setInstalled(true);
+    window.addEventListener('beforeinstallprompt', beforeInstall);
+    window.addEventListener('appinstalled', installedHandler);
+    if (window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone) setInstalled(true);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', beforeInstall);
+      window.removeEventListener('appinstalled', installedHandler);
+    };
+  }, []);
+
+  async function installApp() {
+    if (!promptEvent) return;
+    promptEvent.prompt();
+    await promptEvent.userChoice;
+    setPromptEvent(null);
+  }
+
+  return <div className={compact ? 'mobilePushHelp compact' : 'mobilePushHelp'}>
+    <b>📲 Para receber melhor no celular</b>
+    <span><strong>Android/Chrome:</strong> permita notificações e, se aparecer, toque em “Instalar app”. Depois os avisos ficam na tela bloqueada e na central de notificações.</span>
+    <span><strong>iPhone:</strong> toque em Compartilhar → “Adicionar à Tela de Início”. No iOS, notificações web ficam mais confiáveis quando a página está instalada como app.</span>
+    {installed ? <em>App instalado neste dispositivo.</em> : promptEvent ? <Button className="primary" onClick={installApp}>Instalar Chamy no celular</Button> : <small>Se o botão de instalação não aparecer, use o menu do navegador e escolha “Adicionar à tela inicial”.</small>}
+  </div>;
+}
+
 function PublicCapture(){
   const [loja, setLoja] = useState(null);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({ nome:'', whatsapp:'', cidade:'', interesse:'Todos' });
   const [status, setStatus] = useState('');
   const [done, setDone] = useState(false);
+  const [showMore, setShowMore] = useState(false);
 
   useEffect(() => {
+    let alive = true;
+    async function findLoja(identifier) {
+      const clean = String(identifier || '').trim();
+      if (!clean) return null;
+
+      if (isUuid(clean)) {
+        const { data, error } = await supabase.from('lojas').select('*').eq('id', clean).maybeSingle();
+        if (error) throw error;
+        return data || null;
+      }
+
+      // Fallback para links antigos por nome/slug.
+      const { data, error } = await supabase.from('lojas').select('*');
+      if (error) throw error;
+      const activeStores = (data || []).filter(l => ['ativa','ativo','teste'].includes(normalizeStoreStatus(l.status)));
+      return activeStores.find(l => slugify(l.nome) === clean) || (activeStores.length === 1 ? activeStores[0] : null);
+    }
+
     async function loadLoja(){
       if (!supabase) { setStatus('Supabase não configurado.'); setLoading(false); return; }
-      const params = new URLSearchParams(window.location.search);
-      const lojaId = params.get('loja_id') || params.get('loja');
+      const identifier = getPublicStoreParam();
+      if (!identifier) { setStatus('Link da loja incompleto.'); setLoading(false); return; }
       try {
-        if (lojaId) {
-          const { data, error } = await supabase.from('lojas').select('*').eq('id', lojaId).maybeSingle();
-          if (error) throw error;
-          setLoja(data);
-        } else {
-          const slug = decodeURIComponent(window.location.pathname.split('/loja/')[1]?.replace(/\/$/,'') || '').trim();
-          if (isUuid(slug)) {
-            const { data, error } = await supabase.from('lojas').select('*').eq('id', slug).maybeSingle();
-            if (error) throw error;
-            setLoja(data);
-          } else {
-            const { data, error } = await supabase.from('lojas').select('*');
-            if (error) throw error;
-            const activeStores = (data || []).filter(l => ['ativa','ativo','teste'].includes(String(l.status || '').toLowerCase()));
-            const found = activeStores.find(l => slugify(l.nome) === slug) || (activeStores.length === 1 ? activeStores[0] : null);
-            setLoja(found);
+        setStatus('Carregando loja...');
+        let found = null;
+        let lastError = null;
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+          try {
+            found = await findLoja(identifier);
+            if (found || !alive) break;
+          } catch (e) {
+            lastError = e;
           }
+          await wait(700);
+        }
+        if (!alive) return;
+        if (found) {
+          setLoja(found);
+          setStatus('');
+        } else {
+          setStatus(lastError?.message || 'Não localizamos esta loja. Peça ao vendedor o link público atualizado no menu Loja.');
         }
       } catch (e) {
-        setStatus(e.message || 'Erro ao carregar loja.');
-      } finally { setLoading(false); }
+        if (alive) setStatus(e.message || 'Erro ao carregar loja.');
+      } finally { if (alive) setLoading(false); }
     }
     loadLoja();
+    return () => { alive = false; };
   }, []);
 
   async function activatePublicPush(e){
@@ -649,7 +787,7 @@ function PublicCapture(){
   }
 
   if (loading && !loja) return <div className="publicPage"><Card className="publicCard"><Logo/><h2>Carregando loja...</h2></Card></div>;
-  if (!loja) return <div className="publicPage"><Card className="publicCard"><Logo/><h2>Loja não encontrada</h2><p>Confira o link recebido ou peça um novo convite para a loja.</p><a className="publicLink" href="/">Voltar para o Chamy</a></Card></div>;
+  if (!loja) return <div className="publicPage"><Card className="publicCard"><Logo/><h2>Loja não encontrada</h2><p>{status || 'Confira o link recebido ou peça um novo convite para a loja.'}</p><div className="two"><Button className="primary" onClick={()=>window.location.reload()}>Tentar novamente</Button><a className="publicLink" href="/">Voltar para o Chamy</a></div></Card></div>;
 
   return <div className="publicPage">
     <Card className="publicCard">
@@ -658,16 +796,17 @@ function PublicCapture(){
       </div>
       <Badge tone="green">Inscrição gratuita</Badge>
       <h1>Receba promoções e novidades da {loja.nome}</h1>
-      <p className="publicLead">Cadastre-se para ser avisado quando chegarem ofertas, lançamentos e campanhas especiais. Você pode bloquear as notificações quando quiser no seu navegador.</p>
-      <form onSubmit={activatePublicPush} className="publicForm">
+      <p className="publicLead">Digite apenas seu nome e permita as notificações. Assim você recebe ofertas, lançamentos e avisos importantes direto no celular ou computador.</p>
+      {done ? <div className="successBox"><CheckCircle2 size={42}/><h2>🎉 Pronto!</h2><p>Agora você receberá promoções, novidades e ofertas exclusivas da {loja.nome}. Você pode cancelar quando quiser nas configurações do navegador.</p><div className="two"><Button className="primary" onClick={()=>{ const destino = loja.site || (loja.whatsapp ? `https://wa.me/${String(loja.whatsapp).replace(/\D/g,'')}` : '/'); window.open(destino, '_blank'); }}>Conhecer a loja</Button><Button onClick={()=>setDone(false)}>Atualizar cadastro</Button></div><PWAInstallTip compact /></div> : <form onSubmit={activatePublicPush} className="publicForm simpleCapture">
         <label>Seu nome</label><input value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} placeholder="Ex: Maria Silva" />
-        <label>WhatsApp</label><input value={form.whatsapp} onChange={e=>setForm({...form,whatsapp:e.target.value})} placeholder="(12) 99999-9999" />
-        <div className="two"><div><label>Cidade/UF</label><input value={form.cidade} onChange={e=>setForm({...form,cidade:e.target.value})} placeholder="Aparecida/SP" /></div><div><label>Interesse</label><select value={form.interesse} onChange={e=>setForm({...form,interesse:e.target.value})}><option>Todos</option><option>Promoções</option><option>Novidades</option></select></div></div>
-        {status && <p className={done ? 'successMessage' : 'authMessage'}>{status}</p>}
-        <Button className="primary" disabled={loading || done}>{done ? <CheckCircle2 size={17}/> : <Bell size={17}/>} {done ? 'Notificações ativadas' : loading ? 'Ativando...' : 'Quero receber avisos'}</Button>
-      </form>
+        <button type="button" className="moreFields" onClick={()=>setShowMore(!showMore)}>{showMore ? 'Ocultar dados opcionais' : '+ Quero informar mais dados'}</button>
+        {showMore && <div className="advancedFields"><label>WhatsApp opcional</label><input value={form.whatsapp} onChange={e=>setForm({...form,whatsapp:e.target.value})} placeholder="(12) 99999-9999" />
+        <div className="two"><div><label>Cidade/UF opcional</label><input value={form.cidade} onChange={e=>setForm({...form,cidade:e.target.value})} placeholder="Aparecida/SP" /></div><div><label>Interesse</label><select value={form.interesse} onChange={e=>setForm({...form,interesse:e.target.value})}><option>Todos</option><option>Promoções</option><option>Novidades</option></select></div></div></div>}
+        {status && <p className="authMessage">{status}</p>}
+        <Button className="primary" disabled={loading}>{loading ? 'Ativando...' : 'Quero receber avisos'}</Button>
+      </form>}
       <div className="publicBenefits"><span><Gift/> Promoções</span><span><Sparkles/> Novidades</span><span><ShieldCheck/> Cadastro seguro</span></div>
-      <p className="installHint">📲 No celular, adicione esta página à tela inicial para receber avisos com mais destaque.</p><p className="poweredBy">Notificações inteligentes por <b>Chamy</b></p>
+      {!done && <PWAInstallTip compact />}<p className="poweredBy">Notificações inteligentes por <b>Chamy</b></p>
     </Card>
   </div>;
 }
@@ -749,7 +888,7 @@ function StorePanel({ loja, refreshData, user }){
       <label>Link público da loja</label><div className="copyBox"><code>{publicLink}</code><Button onClick={()=>navigator.clipboard?.writeText(publicLink)}><Copy size={16}/> Copiar</Button></div><p className="miniNote">Este é o link estável da captura pública. Ele usa o ID da loja para evitar erro quando o nome da loja muda.</p>
       <label>Código do widget</label><pre>{widgetCode}</pre>
       <Button onClick={()=>navigator.clipboard?.writeText(widgetCode)}><Copy size={16}/> Copiar widget</Button>
-      {normalizePlan(user?.plan || 'gratis') === 'gratis' ? <div className="qrLocked"><QrCode/><b>QR Code da loja</b><span>Disponível nos planos Pro e Business. Use para captar inscritos em balcão, embalagens, cartões e eventos.</span><Button onClick={()=>alert('Upgrade para Pro liberará QR Code e agendamento.')}>Liberar QR Code</Button></div> : <div className="qrBox"><div><QrCode/><b>QR Code da loja</b><span>Use em balcão, embalagem, cartão, evento ou grupos de WhatsApp para captar inscritos rapidamente.</span></div><img src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(publicLink)}`} alt="QR Code da loja"/><div className="two"><Button onClick={()=>window.open(publicLink, '_blank')}><ExternalLink size={16}/> Abrir página</Button><Button onClick={()=>{const a=document.createElement('a');a.href=`https://api.qrserver.com/v1/create-qr-code/?size=800x800&data=${encodeURIComponent(publicLink)}`;a.download='qrcode-chamy.png';a.click();}}><QrCode size={16}/> Baixar QR</Button></div></div>}<div className="installHelp"><b>📲 Dica para celular</b><span>Oriente seus clientes a adicionarem a página à tela inicial. No Android isso melhora a experiência e deixa as notificações mais parecidas com app.</span></div>
+      {normalizePlan(user?.plan || 'gratis') === 'gratis' ? <div className="qrLocked"><QrCode/><b>QR Code da loja</b><span>Disponível nos planos Pro e Business. Use para captar inscritos em balcão, embalagens, cartões e eventos.</span><Button onClick={()=>alert('Upgrade para Pro liberará QR Code e agendamento.')}>Liberar QR Code</Button></div> : <div className="qrBox"><div><QrCode/><b>QR Code da loja</b><span>Use em balcão, embalagem, cartão, evento ou grupos de WhatsApp para captar inscritos rapidamente.</span></div><img src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(publicLink)}`} alt="QR Code da loja"/><div className="two"><Button onClick={()=>window.open(publicLink, '_blank')}><ExternalLink size={16}/> Abrir página</Button><Button onClick={()=>{const a=document.createElement('a');a.href=`https://api.qrserver.com/v1/create-qr-code/?size=800x800&data=${encodeURIComponent(publicLink)}`;a.download='qrcode-chamy.png';a.click();}}><QrCode size={16}/> Baixar QR</Button></div></div>}<PWAInstallTip />
     </Card>
   </div>;
 }
@@ -893,7 +1032,7 @@ function App(){
             const sent = rows.length;
             const clicks = rows.filter(e => e.clicou).length;
             const rate = sent ? `${Math.round((clicks / sent) * 100)}%` : '0%';
-            return { id: c.id, title: c.titulo, msg: c.mensagem, link: c.link || '', status: c.status || 'rascunho', audience: c.publico || 'Todos', freq: c.frequencia || 'único', duration: `${c.duracao_dias || 1} dias`, sent, clicks, rate, date: c.created_at ? new Date(c.created_at).toLocaleDateString('pt-BR') : '', createdAt: c.created_at }; 
+            return { id: c.id, title: c.titulo, msg: c.mensagem, link: c.link || '', imageUrl: c.imagem_url || '', status: c.status || 'rascunho', audience: c.publico || 'Todos', freq: c.frequencia || 'único', duration: `${c.duracao_dias || 1} dias`, scheduledAt: c.agendada_para, sent, clicks, rate, date: c.created_at ? new Date(c.created_at).toLocaleDateString('pt-BR') : '', createdAt: c.created_at }; 
           })
         }));
       }

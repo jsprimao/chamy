@@ -59,7 +59,7 @@ export default async function handler(req, res) {
       return json(res, 404, { ok: false, error: campaignError?.message || 'Campanha não encontrada ou sem permissão.', debug });
     }
 
-    debug.campaign = { id: campaign.id, loja_id: campaign.loja_id, titulo: campaign.titulo };
+    debug.campaign = { id: campaign.id, loja_id: campaign.loja_id, titulo: campaign.titulo, hasImage: Boolean(campaign.imagem_url) };
 
     const { data: loja } = await supabase
       .from('lojas')
@@ -68,7 +68,9 @@ export default async function handler(req, res) {
       .maybeSingle();
 
     const logoUrl = loja?.logo_url && /^https?:\/\//i.test(loja.logo_url) ? loja.logo_url : null;
+    const campaignImageUrl = campaign.imagem_url && /^https?:\/\//i.test(campaign.imagem_url) ? campaign.imagem_url : null;
     debug.storeLogoForPush = Boolean(logoUrl);
+    debug.campaignImageForPush = Boolean(campaignImageUrl);
 
     debug.step = 'buscando clientes push';
     const { data: clients, error: clientsError } = await supabase
@@ -111,20 +113,28 @@ export default async function handler(req, res) {
 
     for (const client of pushClients) {
       const clickUrl = `${origin}/api/click?campaign_id=${encodeURIComponent(campaign.id)}&cliente_id=${encodeURIComponent(client.id)}&to=${encodeURIComponent(defaultTarget)}`;
+      const notificationIcon = logoUrl || `${origin}/app-icon.png`;
+      const notificationBadge = `${origin}/favicon.png`;
       const payload = {
         app_id: oneSignalAppId,
-        headings: { en: campaign.titulo || 'Chamy', pt: campaign.titulo || 'Chamy' },
+        headings: { en: campaign.titulo || loja?.nome || 'Chamy', pt: campaign.titulo || loja?.nome || 'Chamy' },
         contents: { en: campaign.mensagem || 'Você tem uma novidade.', pt: campaign.mensagem || 'Você tem uma novidade.' },
         url: clickUrl,
-        chrome_web_icon: logoUrl || `${origin}/favicon.png`,
-        chrome_web_badge: logoUrl || `${origin}/favicon.png`,
+        chrome_web_icon: notificationIcon,
+        chrome_web_badge: notificationBadge,
+        chrome_web_image: campaignImageUrl || logoUrl || undefined,
+        big_picture: campaignImageUrl || undefined,
+        web_push_topic: `chamy-${campaign.id}`,
+        ttl: 86400,
+        priority: 10,
         include_subscription_ids: [client.subscriptionId],
         data: {
           campaign_id: campaign.id,
           cliente_id: client.id,
           loja_id: campaign.loja_id,
+          destino: defaultTarget,
           chamy: true,
-          tracking: 'v9'
+          tracking: 'v19-image-schedule'
         }
       };
 
