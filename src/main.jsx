@@ -622,7 +622,7 @@ function PublicCapture(){
       <form onSubmit={activatePublicPush} className="publicForm">
         <label>Seu nome</label><input value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} placeholder="Ex: Maria Silva" />
         <label>WhatsApp</label><input value={form.whatsapp} onChange={e=>setForm({...form,whatsapp:e.target.value})} placeholder="(12) 99999-9999" />
-        <div className="two"><div><label>Cidade/UF</label><input value={form.cidade} onChange={e=>setForm({...form,cidade:e.target.value})} placeholder="Aparecida/SP" /></div><div><label>Interesse</label><select value={form.interesse} onChange={e=>setForm({...form,interesse:e.target.value})}><option>Todos</option><option>Promoções</option><option>Novidades</option><option>Clientes VIP</option></select></div></div>
+        <div className="two"><div><label>Cidade/UF</label><input value={form.cidade} onChange={e=>setForm({...form,cidade:e.target.value})} placeholder="Aparecida/SP" /></div><div><label>Interesse</label><select value={form.interesse} onChange={e=>setForm({...form,interesse:e.target.value})}><option>Todos</option><option>Promoções</option><option>Novidades</option></select></div></div>
         {status && <p className={done ? 'successMessage' : 'authMessage'}>{status}</p>}
         <Button className="primary" disabled={loading || done}>{done ? <CheckCircle2 size={17}/> : <Bell size={17}/>} {done ? 'Notificações ativadas' : loading ? 'Ativando...' : 'Quero receber avisos'}</Button>
       </form>
@@ -757,7 +757,7 @@ function Segments({ data }){
     </Card>
     <Card className="tipsCard">
       <h3>Como usar segmentos?</h3>
-      <p>Na tela <b>Inscritos</b>, cada cliente possui um interesse. Esse interesse vira um segmento para campanhas mais direcionadas, como Promoções, Novidades, VIP, Atacado ou Clientes inativos.</p>
+      <p>Na tela <b>Inscritos</b>, cada cliente possui um interesse. Esse interesse vira um segmento para campanhas mais direcionadas, como Promoções, Novidades, Atacado ou Clientes inativos.</p>
       <p>Na criação de campanhas, escolha o público desejado para enviar mensagens mais relevantes e melhorar a taxa de clique.</p>
     </Card>
   </div>;

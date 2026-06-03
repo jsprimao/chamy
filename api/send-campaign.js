@@ -61,6 +61,15 @@ export default async function handler(req, res) {
 
     debug.campaign = { id: campaign.id, loja_id: campaign.loja_id, titulo: campaign.titulo };
 
+    const { data: loja } = await supabase
+      .from('lojas')
+      .select('logo_url,nome')
+      .eq('id', campaign.loja_id)
+      .maybeSingle();
+
+    const logoUrl = loja?.logo_url && /^https?:\/\//i.test(loja.logo_url) ? loja.logo_url : null;
+    debug.storeLogoForPush = Boolean(logoUrl);
+
     debug.step = 'buscando clientes push';
     const { data: clients, error: clientsError } = await supabase
       .from('clientes')
@@ -103,8 +112,8 @@ export default async function handler(req, res) {
         headings: { en: campaign.titulo || 'Chamy', pt: campaign.titulo || 'Chamy' },
         contents: { en: campaign.mensagem || 'Você tem uma novidade.', pt: campaign.mensagem || 'Você tem uma novidade.' },
         url: clickUrl,
-        chrome_web_icon: `${origin}/favicon.png`,
-        chrome_web_badge: `${origin}/favicon.png`,
+        chrome_web_icon: logoUrl || `${origin}/favicon.png`,
+        chrome_web_badge: logoUrl || `${origin}/favicon.png`,
         include_subscription_ids: [client.subscriptionId],
         data: {
           campaign_id: campaign.id,
