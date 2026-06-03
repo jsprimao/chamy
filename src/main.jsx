@@ -19,6 +19,7 @@ function Logo({ compact = false }) { return <div className={compact ? 'brand com
 function normalizePlan(plan = 'gratis') { return String(plan).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
 function nicePlan(plan = 'gratis') { return plans[normalizePlan(plan)]?.label || plan || 'Grátis'; }
 function slugify(text = '') { return String(text || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'') || 'loja'; }
+function isUuid(value = '') { return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim()); }
 
 
 function parsePct(rate) {
@@ -551,11 +552,18 @@ function PublicCapture(){
           if (error) throw error;
           setLoja(data);
         } else {
-          const slug = window.location.pathname.split('/loja/')[1]?.replace(/\/$/,'') || '';
-          const { data, error } = await supabase.from('lojas').select('*').eq('status','ativa');
-          if (error) throw error;
-          const found = (data || []).find(l => slugify(l.nome) === slug) || null;
-          setLoja(found);
+          const slug = decodeURIComponent(window.location.pathname.split('/loja/')[1]?.replace(/\/$/,'') || '').trim();
+          if (isUuid(slug)) {
+            const { data, error } = await supabase.from('lojas').select('*').eq('id', slug).maybeSingle();
+            if (error) throw error;
+            setLoja(data);
+          } else {
+            const { data, error } = await supabase.from('lojas').select('*');
+            if (error) throw error;
+            const activeStores = (data || []).filter(l => ['ativa','ativo','teste'].includes(String(l.status || '').toLowerCase()));
+            const found = activeStores.find(l => slugify(l.nome) === slug) || (activeStores.length === 1 ? activeStores[0] : null);
+            setLoja(found);
+          }
         }
       } catch (e) {
         setStatus(e.message || 'Erro ao carregar loja.');
@@ -627,7 +635,7 @@ function StorePanel({ loja, refreshData }){
   });
   const [msg, setMsg] = useState('');
   const slug = slugify(loja?.nome || 'minha-loja');
-  const publicLink = `${window.location.origin}/loja/${slug}`;
+  const publicLink = `${window.location.origin}/loja/${loja?.id || slug}`;
   const widgetCode = `<script src="${window.location.origin}/widget.js" data-loja="${loja?.id || 'ID_DA_LOJA'}"></script>`;
   useEffect(()=>{ setForm({ nome: loja?.nome || '', site: loja?.site || '', whatsapp: loja?.whatsapp || '', cidade: loja?.cidade || '' }); }, [loja?.id]);
   async function save(){
@@ -650,7 +658,7 @@ function StorePanel({ loja, refreshData }){
     <Card>
       <div className="cardHead"><h3>Link público e instalação</h3><Store size={22}/></div>
       <p className="muted">Use estes dados para divulgar a captura de inscritos da loja.</p>
-      <label>Link público da loja</label><div className="copyBox"><code>{publicLink}</code><Button onClick={()=>navigator.clipboard?.writeText(publicLink)}><Copy size={16}/> Copiar</Button></div>
+      <label>Link público da loja</label><div className="copyBox"><code>{publicLink}</code><Button onClick={()=>navigator.clipboard?.writeText(publicLink)}><Copy size={16}/> Copiar</Button></div><p className="miniNote">Este é o link estável da captura pública. Ele usa o ID da loja para evitar erro quando o nome da loja muda.</p>
       <label>Código do widget</label><pre>{widgetCode}</pre>
       <Button onClick={()=>navigator.clipboard?.writeText(widgetCode)}><Copy size={16}/> Copiar widget</Button>
       <div className="qrPlaceholder"><QrCode/><b>Página pública pronta</b><span>Divulgue este link em grupos, redes sociais, bio do Instagram, catálogo e materiais impressos. O QR Code visual será uma próxima melhoria.</span><Button onClick={()=>window.open(publicLink, '_blank')}><ExternalLink size={16}/> Abrir página pública</Button></div>
