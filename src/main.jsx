@@ -363,19 +363,31 @@ function Login({ setUser }) {
 const sellerMenu = [ ['dash','Dashboard',BarChart3], ['camp','Campanhas',Send], ['auto','Automação',Zap], ['clients','Inscritos',Users], ['capture','Captura Push',Bell], ['segments','Segmentos',Users], ['reports','Relatórios',TrendingUp], ['store','Loja',Store], ['plans','Planos',Crown], ['config','Configurações',Settings] ];
 const adminMenu = [ ['dash','Dashboard Geral',BarChart3], ['vendors','Vendedores',Store], ['plans','Planos',Crown], ['global','Campanhas Globais',Send], ['support','Suporte',LifeBuoy], ['settings','Configurações',Settings] ];
 
-function Shell({ user, setUser, active, setActive, menu, children, data }) {
+function Shell({ user, setUser, active, setActive, menu, children, data, onLogout }) {
   return <div className="app">
     <aside className="sidebar">
       <Logo />
       <nav>{menu.map(([id, label, Icon]) => <button key={id} onClick={() => setActive(id)} className={active === id ? 'active' : ''}><Icon size={19}/><span>{label}</span><b>›</b></button>)}</nav>
       <SidebarValueCard user={user} data={data} setActive={setActive} />
-      <button className="logout" onClick={async () => { if (supabase) await supabase.auth.signOut(); setUser(null); }}><LogOut size={17}/> Sair</button>
+      <button className="logout" onClick={async () => { if (onLogout) { onLogout(); return; } if (supabase) await supabase.auth.signOut(); setUser(null); }}><LogOut size={17}/> {onLogout ? 'Voltar ao admin' : 'Sair'}</button>
     </aside>
     <main>
       <header className="topbar"><div className="topTitle"><Menu/><div><h1>{menu.find(m => m[0] === active)?.[1]}</h1><p>{user.role === 'admin' ? 'Administração geral da plataforma' : 'Visão geral da sua loja'}</p></div></div><div className="userArea"><HelpCircle/> <Bell/> <div className="avatar">{user.name.slice(0,2).toUpperCase()}</div><div><b>{user.name}</b><small>{user.role === 'admin' ? 'Dono da plataforma' : `Plano ${nicePlan(user.plan)}`}</small></div></div></header>
+      {user.role !== 'admin' && ['pausado','bloqueado','excluido'].includes(String(user.status || '').toLowerCase()) && <AccountStatusBanner status={user.status} />}
       {children}
     </main>
   </div>;
+}
+
+
+function AccountStatusBanner({ status }) {
+  const key = String(status || '').toLowerCase();
+  const info = key === 'bloqueado'
+    ? { title: 'Conta bloqueada', text: 'Seu acesso foi bloqueado pelo administrador da plataforma. Entre em contato com o suporte para regularizar.' }
+    : key === 'excluido'
+      ? { title: 'Conta marcada como excluída', text: 'Esta conta não está disponível para uso. Entre em contato com o suporte.' }
+      : { title: 'Conta pausada', text: 'Sua conta está temporariamente pausada. Você ainda pode visualizar seus dados, mas recursos como novas campanhas e captação podem ficar limitados.' };
+  return <div className={`accountStatusBanner ${key}`}><AlertCircle size={22}/><div><b>{info.title}</b><p>{info.text}</p></div></div>;
 }
 
 function Stat({ Icon, label, value, change, color = 'purple' }) { return <Card className="stat"><span className={color}><Icon/></span><div><h2>{value}</h2><p>{label}</p><small>↗ {change}</small></div></Card>; }
@@ -1080,9 +1092,9 @@ function Segments({ data }){
 }
 function TargetIcon(){ return <Users size={20}/>; }
 
-function Seller({ user, setUser, data, setData, loja, refreshData }) {
+function Seller({ user, setUser, data, setData, loja, refreshData, onLogout }) {
   const [active,setActive]=useState('dash');
-  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={sellerMenu} data={data}>{active==='dash'&&<Dashboard data={data} user={user} setActive={setActive} loja={loja}/>} {active==='camp'&&<Campaigns data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData} user={user}/>} {active==='auto'&&<Automations/>} {active==='clients'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData} user={user}/>} {active==='capture'&&<Capture loja={loja} data={data} setData={setData} refreshData={refreshData} user={user}/>} {active==='segments'&&<Segments data={data}/>} {active==='reports'&&<Reports data={data} user={user}/>} {active==='store'&&<StorePanel loja={loja} refreshData={refreshData} user={user}/>} {active==='plans'&&<Plans/>} {active==='config'&&<ConfigPanel user={user} setUser={setUser}/>}</Shell>;
+  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={sellerMenu} data={data} onLogout={onLogout}>{active==='dash'&&<Dashboard data={data} user={user} setActive={setActive} loja={loja}/>} {active==='camp'&&<Campaigns data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData} user={user}/>} {active==='auto'&&<Automations/>} {active==='clients'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData} user={user}/>} {active==='capture'&&<Capture loja={loja} data={data} setData={setData} refreshData={refreshData} user={user}/>} {active==='segments'&&<Segments data={data}/>} {active==='reports'&&<Reports data={data} user={user}/>} {active==='store'&&<StorePanel loja={loja} refreshData={refreshData} user={user}/>} {active==='plans'&&<Plans/>} {active==='config'&&<ConfigPanel user={user} setUser={setUser}/>}</Shell>;
 }
 
 function Admin({ user, setUser, data, setData, refreshData }) {
@@ -1092,6 +1104,7 @@ function Admin({ user, setUser, data, setData, refreshData }) {
   const [busy,setBusy]=useState(false);
   const [adminMessage,setAdminMessage]=useState('');
   const [createForm,setCreateForm]=useState({ name:'', email:'', password:'12345678', storeName:'', plan:'gratis', status:'ativo' });
+  const [impersonating,setImpersonating]=useState(null);
 
   const paid = data.vendors.filter(v=>normalizePlan(v.planKey || v.plan)!=='gratis').length;
   const activeVendors = data.vendors.filter(v=>String(v.status || '').toLowerCase()==='ativo').length;
@@ -1160,6 +1173,54 @@ function Admin({ user, setUser, data, setData, refreshData }) {
     updateVendor(vendor, { status:'excluido', storeStatus:'excluida' });
   }
 
+  async function enterAsVendor(vendor) {
+    setBusy(true); setAdminMessage('');
+    try {
+      const { data: lojas, error: lojaError } = await supabase.from('lojas').select('*').eq('user_id', vendor.id).limit(1);
+      if (lojaError) throw lojaError;
+      const lojaAtual = lojas?.[0];
+      if (!lojaAtual) throw new Error('Este vendedor ainda não possui loja cadastrada.');
+      const { data: clientes, error: clientesError } = await supabase.from('clientes').select('*').eq('loja_id', lojaAtual.id).order('created_at', { ascending:false });
+      if (clientesError) throw clientesError;
+      const { data: campanhas, error: campanhasError } = await supabase.from('campanhas').select('*').eq('loja_id', lojaAtual.id).order('created_at', { ascending:false });
+      if (campanhasError) throw campanhasError;
+      const campaignIds = (campanhas || []).map(c => c.id);
+      let envios = [];
+      if (campaignIds.length) {
+        const { data: enviosData, error: enviosError } = await supabase.from('envios').select('*').in('campanha_id', campaignIds);
+        if (enviosError) throw enviosError;
+        envios = enviosData || [];
+      }
+      const workspaceData = {
+        ...emptyData,
+        customers: (clientes || []).map((c) => ({ id: c.id, name: c.nome || 'Cliente', city: c.cidade || '', whats: c.whatsapp || '', interest: c.interesse || 'Todos', status: c.status || 'ativo', last: c.created_at ? new Date(c.created_at).toLocaleDateString('pt-BR') : 'Supabase', createdAt: c.created_at, device: c.aceitou_push ? 'Push ativo' : 'Sem push', oneSignalSubscriptionId: c.onesignal_subscription_id || '' })),
+        campaigns: (campanhas || []).map((c) => {
+          const rows = envios.filter(e=>e.campanha_id===c.id);
+          const sent = rows.length;
+          const clicks = rows.filter(e=>e.clicou).length;
+          const rate = sent ? `${Math.round((clicks/sent)*100)}%` : '0%';
+          return { id: c.id, title: c.titulo, msg: c.mensagem, link: c.link || '', imageUrl: c.imagem_url || '', status: c.status || 'rascunho', audience: c.publico || 'Todos', freq: c.frequencia || 'único', duration: `${c.duracao_dias || 1} dias`, scheduledAt: c.agendada_para, sent, clicks, rate, date: c.created_at ? new Date(c.created_at).toLocaleDateString('pt-BR') : '', createdAt: c.created_at };
+        })
+      };
+      setImpersonating({
+        vendor,
+        loja: lojaAtual,
+        data: workspaceData,
+        user: { id: vendor.id, role:'seller', name: vendor.name, email: vendor.email, plan: normalizePlan(vendor.planKey || vendor.plan || 'gratis'), status: vendor.status || 'ativo' }
+      });
+    } catch (err) {
+      setAdminMessage(err.message || 'Não foi possível acessar como vendedor.');
+    } finally { setBusy(false); }
+  }
+
+  if (impersonating) {
+    const refreshImpersonated = async () => enterAsVendor(impersonating.vendor);
+    return <>
+      <div className="impersonationBar"><ShieldCheck size={20}/><div><b>Modo suporte: acessando como {impersonating.user.name}</b><p>Você está visualizando a conta do vendedor para testes e suporte. Nenhuma senha do vendedor foi usada.</p></div><Button onClick={()=>setImpersonating(null)}>Voltar ao Painel Master</Button></div>
+      <Seller user={impersonating.user} setUser={()=>setImpersonating(null)} data={impersonating.data} setData={(next)=>setImpersonating(prev=>prev?{...prev,data:typeof next==='function'?next(prev.data):next}:prev)} loja={impersonating.loja} refreshData={refreshImpersonated} onLogout={()=>setImpersonating(null)} />
+    </>;
+  }
+
   return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={adminMenu} data={data}>
     {adminMessage && <div className="globalError successMsg">{adminMessage}</div>}
 
@@ -1183,14 +1244,14 @@ function Admin({ user, setUser, data, setData, refreshData }) {
         </Card>
         <Card>
           <div className="cardHead"><h3>Vendedores recentes</h3><Button onClick={refreshData}>Atualizar</Button></div>
-          <AdminVendorsTable rows={data.vendors.slice(0,6)} onEdit={setEditing} onPause={(v)=>updateVendor(v,{status:'pausado'})} onActivate={(v)=>updateVendor(v,{status:'ativo'})} onBlock={(v)=>updateVendor(v,{status:'bloqueado'})} onDelete={softDeleteVendor}/>
+          <AdminVendorsTable rows={data.vendors.slice(0,6)} onEdit={setEditing} onImpersonate={enterAsVendor} onPause={(v)=>updateVendor(v,{status:'pausado'})} onActivate={(v)=>updateVendor(v,{status:'ativo'})} onBlock={(v)=>updateVendor(v,{status:'bloqueado'})} onDelete={softDeleteVendor}/>
         </Card>
       </div>
     </>}
 
     {active==='vendors'&&<Card>
       <div className="cardHead"><div><h3>Painel Master de Vendedores</h3><p className="muted">Crie contas teste, altere planos, pause, bloqueie ou corrija dados de lojas.</p></div><Button className="primary" onClick={()=>setCreating(true)}><Plus size={17}/> Criar conta teste</Button></div>
-      <AdminVendorsTable rows={data.vendors} onEdit={setEditing} onPause={(v)=>updateVendor(v,{status:'pausado'})} onActivate={(v)=>updateVendor(v,{status:'ativo'})} onBlock={(v)=>updateVendor(v,{status:'bloqueado'})} onDelete={softDeleteVendor}/>
+      <AdminVendorsTable rows={data.vendors} onEdit={setEditing} onImpersonate={enterAsVendor} onPause={(v)=>updateVendor(v,{status:'pausado'})} onActivate={(v)=>updateVendor(v,{status:'ativo'})} onBlock={(v)=>updateVendor(v,{status:'bloqueado'})} onDelete={softDeleteVendor}/>
     </Card>}
 
     {active==='plans'&&<Plans/>}
@@ -1213,9 +1274,9 @@ function Admin({ user, setUser, data, setData, refreshData }) {
   </Shell>;
 }
 
-function AdminVendorsTable({ rows, onEdit, onPause, onActivate, onBlock, onDelete }) {
+function AdminVendorsTable({ rows, onEdit, onImpersonate, onPause, onActivate, onBlock, onDelete }) {
   if (!rows?.length) return <p className="muted">Nenhum vendedor encontrado.</p>;
-  return <div className="table adminTable"><table><thead><tr><th>Vendedor</th><th>Loja</th><th>Plano</th><th>Status</th><th>Inscritos</th><th>Campanhas</th><th>Ações</th></tr></thead><tbody>{rows.map(v=><tr key={v.id}><td><b>{v.name}</b><small>{v.email}</small></td><td>{v.loja || '-'}</td><td><Badge tone={normalizePlan(v.planKey || v.plan)==='business'?'green':normalizePlan(v.planKey || v.plan)==='pro'?'violet':'gray'}>{nicePlan(v.planKey || v.plan)}</Badge></td><td><Badge tone={String(v.status).toLowerCase()==='ativo'?'green':String(v.status).toLowerCase()==='bloqueado'?'orange':'gray'}>{v.status}</Badge></td><td>{v.subscribers}</td><td>{v.campaigns}</td><td><div className="rowActions"><button onClick={()=>onEdit(v)}>Editar</button>{String(v.status).toLowerCase()==='ativo'?<button onClick={()=>onPause(v)}>Pausar</button>:<button onClick={()=>onActivate(v)}>Ativar</button>}<button onClick={()=>onBlock(v)}>Bloquear</button><button className="danger" onClick={()=>onDelete(v)}>Excluir</button></div></td></tr>)}</tbody></table></div>;
+  return <div className="table adminTable"><table><thead><tr><th>Vendedor</th><th>Loja</th><th>Plano</th><th>Status</th><th>Inscritos</th><th>Campanhas</th><th>Ações</th></tr></thead><tbody>{rows.map(v=><tr key={v.id}><td><b>{v.name}</b><small>{v.email}</small></td><td>{v.loja || '-'}</td><td><Badge tone={normalizePlan(v.planKey || v.plan)==='business'?'green':normalizePlan(v.planKey || v.plan)==='pro'?'violet':'gray'}>{nicePlan(v.planKey || v.plan)}</Badge></td><td><Badge tone={String(v.status).toLowerCase()==='ativo'?'green':String(v.status).toLowerCase()==='bloqueado'?'orange':'gray'}>{v.status}</Badge></td><td>{v.subscribers}</td><td>{v.campaigns}</td><td><div className="rowActions"><button onClick={()=>onImpersonate?.(v)}>Entrar como usuário</button><button onClick={()=>onEdit(v)}>Editar</button>{String(v.status).toLowerCase()==='ativo'?<button onClick={()=>onPause(v)}>Pausar</button>:<button onClick={()=>onActivate(v)}>Ativar</button>}<button onClick={()=>onBlock(v)}>Bloquear</button><button className="danger" onClick={()=>onDelete(v)}>Excluir</button></div></td></tr>)}</tbody></table></div>;
 }
 
 function EditVendorModal({ vendor, onClose, onSave, busy }) {
