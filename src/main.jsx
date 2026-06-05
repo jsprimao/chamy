@@ -1087,10 +1087,146 @@ function Seller({ user, setUser, data, setData, loja, refreshData }) {
 
 function Admin({ user, setUser, data, setData, refreshData }) {
   const [active,setActive]=useState('dash');
-  async function addVendor(){
-    alert('Por segurança, crie vendedores pelo cadastro normal ou em Authentication > Users. Depois eles aparecerão aqui.');
+  const [creating,setCreating]=useState(false);
+  const [editing,setEditing]=useState(null);
+  const [busy,setBusy]=useState(false);
+  const [adminMessage,setAdminMessage]=useState('');
+  const [createForm,setCreateForm]=useState({ name:'', email:'', password:'12345678', storeName:'', plan:'gratis', status:'ativo' });
+
+  const paid = data.vendors.filter(v=>normalizePlan(v.planKey || v.plan)!=='gratis').length;
+  const activeVendors = data.vendors.filter(v=>String(v.status || '').toLowerCase()==='ativo').length;
+  const pausedVendors = data.vendors.filter(v=>['pausado','bloqueado','excluido'].includes(String(v.status || '').toLowerCase())).length;
+
+  async function adminToken() {
+    const { data: sessionData } = await supabase.auth.getSession();
+    return sessionData.session?.access_token || '';
   }
-  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={adminMenu} data={data}>{active==='dash'&&<><div className="stats"><Stat Icon={Store} label="Vendedores" value={data.vendors.length} change="dados reais"/><Stat Icon={Users} label="Inscritos totais" value={data.vendors.reduce((a,v)=>a+(Number(v.subscribers)||0),0).toLocaleString('pt-BR')} change="em todas as lojas" color="blue"/><Stat Icon={CreditCard} label="Planos pagos" value={data.vendors.filter(v=>normalizePlan(v.plan)!=='gratis').length} change="Pro/Business" color="green"/><Stat Icon={TrendingUp} label="MRR estimado" value={`R$ ${data.vendors.reduce((a,v)=>a+(normalizePlan(v.plan)==='pro'?39:normalizePlan(v.plan)==='business'?149:0),0)}`} change="base atual" color="orange"/></div><Card><div className="cardHead"><h3>Vendedores recentes</h3><Button onClick={refreshData}>Atualizar</Button></div><Table rows={data.vendors} cols={['name','email','plan','status','subscribers','campaigns','sales']}/></Card></>} {active==='vendors'&&<Card><div className="cardHead"><h3>Vendedores / usuários</h3><Button className="primary" onClick={addVendor}><Plus size={17}/> Adicionar</Button></div><Table rows={data.vendors} cols={['name','email','plan','status','subscribers','campaigns','sales']}/></Card>} {active==='plans'&&<Plans/>} {active==='global'&&<Card><h3>Campanha global para vendedores</h3><input defaultValue="Novidade no Chamy"/><textarea defaultValue="Agora você pode criar campanhas automáticas em poucos cliques."/><Button className="primary"><Send size={17}/> Enviar aviso geral</Button></Card>} {active==='support'&&<Card><h3>Chamados</h3><Table rows={data.tickets} cols={['vendor','subject','status']}/></Card>} {active==='settings'&&<ConfigPanel user={user} setUser={setUser}/>}</Shell>;
+
+  async function createVendor(e) {
+    e?.preventDefault?.();
+    setBusy(true); setAdminMessage('');
+    try {
+      if (!createForm.name || !createForm.email || !createForm.password || !createForm.storeName) {
+        throw new Error('Preencha nome, e-mail, senha e nome da loja.');
+      }
+      const token = await adminToken();
+      const res = await fetch('/api/admin-create-vendor', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json', Authorization:`Bearer ${token}` },
+        body: JSON.stringify(createForm)
+      });
+      const json = await res.json().catch(()=>({}));
+      if (!res.ok || !json.ok) throw new Error(json.error || 'Não foi possível criar o vendedor.');
+      setAdminMessage('Conta criada com sucesso. O vendedor já pode acessar o Chamy.');
+      setCreateForm({ name:'', email:'', password:'12345678', storeName:'', plan:'gratis', status:'ativo' });
+      setCreating(false);
+      await refreshData();
+    } catch (err) {
+      setAdminMessage(err.message || 'Erro ao criar vendedor.');
+    } finally { setBusy(false); }
+  }
+
+  async function updateVendor(vendor, patch) {
+    setBusy(true); setAdminMessage('');
+    try {
+      const profilePatch = {};
+      const lojaPatch = {};
+      if (patch.name !== undefined) profilePatch.nome = patch.name;
+      if (patch.email !== undefined) profilePatch.email = patch.email;
+      if (patch.plan !== undefined) profilePatch.plano = normalizePlan(patch.plan);
+      if (patch.status !== undefined) profilePatch.status = patch.status;
+      if (patch.storeName !== undefined) lojaPatch.nome = patch.storeName;
+      if (patch.storeStatus !== undefined) lojaPatch.status = patch.storeStatus;
+      if (patch.status !== undefined && !patch.storeStatus) lojaPatch.status = patch.status === 'ativo' ? 'ativa' : patch.status;
+
+      if (Object.keys(profilePatch).length) {
+        const { error } = await supabase.from('profiles').update(profilePatch).eq('id', vendor.id);
+        if (error) throw error;
+      }
+      if (vendor.loja_id && Object.keys(lojaPatch).length) {
+        const { error } = await supabase.from('lojas').update(lojaPatch).eq('id', vendor.loja_id);
+        if (error) throw error;
+      }
+      setAdminMessage('Vendedor atualizado com sucesso.');
+      setEditing(null);
+      await refreshData();
+    } catch (err) {
+      setAdminMessage(err.message || 'Erro ao atualizar vendedor.');
+    } finally { setBusy(false); }
+  }
+
+  function softDeleteVendor(vendor) {
+    if (!confirm(`Deseja marcar ${vendor.name} como excluído? O histórico será mantido.`)) return;
+    updateVendor(vendor, { status:'excluido', storeStatus:'excluida' });
+  }
+
+  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={adminMenu} data={data}>
+    {adminMessage && <div className="globalError successMsg">{adminMessage}</div>}
+
+    {active==='dash'&&<>
+      <div className="stats">
+        <Stat Icon={Store} label="Vendedores" value={data.vendors.length} change="total na plataforma"/>
+        <Stat Icon={Users} label="Inscritos totais" value={data.vendors.reduce((a,v)=>a+(Number(v.subscribers)||0),0).toLocaleString('pt-BR')} change="em todas as lojas" color="blue"/>
+        <Stat Icon={CreditCard} label="Planos pagos" value={paid} change="Pro/Business" color="green"/>
+        <Stat Icon={TrendingUp} label="MRR estimado" value={`R$ ${data.vendors.reduce((a,v)=>a+(normalizePlan(v.planKey || v.plan)==='pro'?39:normalizePlan(v.planKey || v.plan)==='business'?149:0),0)}`} change="base atual" color="orange"/>
+      </div>
+      <div className="dashGrid enhanced">
+        <Card>
+          <div className="cardHead"><h3>Controle rápido</h3><Button className="primary" onClick={()=>setCreating(true)}><Plus size={17}/> Criar conta teste</Button></div>
+          <div className="adminQuickGrid">
+            <div><b>{activeVendors}</b><span>ativos</span></div>
+            <div><b>{pausedVendors}</b><span>pausados/bloqueados</span></div>
+            <div><b>{data.vendors.filter(v=>normalizePlan(v.planKey || v.plan)==='pro').length}</b><span>Pro</span></div>
+            <div><b>{data.vendors.filter(v=>normalizePlan(v.planKey || v.plan)==='business').length}</b><span>Business</span></div>
+          </div>
+          <p className="muted">Use este painel para simular planos, pausar lojas, corrigir dados e criar contas de teste sem acessar o Supabase.</p>
+        </Card>
+        <Card>
+          <div className="cardHead"><h3>Vendedores recentes</h3><Button onClick={refreshData}>Atualizar</Button></div>
+          <AdminVendorsTable rows={data.vendors.slice(0,6)} onEdit={setEditing} onPause={(v)=>updateVendor(v,{status:'pausado'})} onActivate={(v)=>updateVendor(v,{status:'ativo'})} onBlock={(v)=>updateVendor(v,{status:'bloqueado'})} onDelete={softDeleteVendor}/>
+        </Card>
+      </div>
+    </>}
+
+    {active==='vendors'&&<Card>
+      <div className="cardHead"><div><h3>Painel Master de Vendedores</h3><p className="muted">Crie contas teste, altere planos, pause, bloqueie ou corrija dados de lojas.</p></div><Button className="primary" onClick={()=>setCreating(true)}><Plus size={17}/> Criar conta teste</Button></div>
+      <AdminVendorsTable rows={data.vendors} onEdit={setEditing} onPause={(v)=>updateVendor(v,{status:'pausado'})} onActivate={(v)=>updateVendor(v,{status:'ativo'})} onBlock={(v)=>updateVendor(v,{status:'bloqueado'})} onDelete={softDeleteVendor}/>
+    </Card>}
+
+    {active==='plans'&&<Plans/>}
+    {active==='global'&&<Card><h3>Campanha global para vendedores</h3><p className="muted">Área reservada para avisos internos da plataforma aos vendedores.</p><input defaultValue="Novidade no Chamy"/><textarea defaultValue="Agora você pode criar campanhas automáticas em poucos cliques."/><Button className="primary"><Send size={17}/> Enviar aviso geral</Button></Card>}
+    {active==='support'&&<Card><h3>Chamados</h3><Table rows={data.tickets} cols={['vendor','subject','status']}/></Card>}
+    {active==='settings'&&<ConfigPanel user={user} setUser={setUser}/>}
+
+    {creating && <div className="modalBackdrop"><form className="adminModal" onSubmit={createVendor}>
+      <div className="cardHead"><h3>Criar conta teste</h3><button type="button" className="iconBtn" onClick={()=>setCreating(false)}>×</button></div>
+      <label>Nome do vendedor</label><input value={createForm.name} onChange={e=>setCreateForm({...createForm,name:e.target.value})} placeholder="Vendedor Pro Teste" />
+      <label>E-mail</label><input value={createForm.email} onChange={e=>setCreateForm({...createForm,email:e.target.value})} placeholder="testepro@email.com" />
+      <label>Senha inicial</label><input value={createForm.password} onChange={e=>setCreateForm({...createForm,password:e.target.value})} placeholder="mínimo 6 caracteres" />
+      <label>Nome da loja</label><input value={createForm.storeName} onChange={e=>setCreateForm({...createForm,storeName:e.target.value})} placeholder="Loja Pro Teste" />
+      <div className="two"><div><label>Plano</label><select value={createForm.plan} onChange={e=>setCreateForm({...createForm,plan:e.target.value})}><option value="gratis">Grátis</option><option value="pro">Pro</option><option value="business">Business</option></select></div><div><label>Status</label><select value={createForm.status} onChange={e=>setCreateForm({...createForm,status:e.target.value})}><option value="ativo">Ativo</option><option value="pausado">Pausado</option><option value="bloqueado">Bloqueado</option></select></div></div>
+      <div className="modalActions"><Button type="button" onClick={()=>setCreating(false)}>Cancelar</Button><Button className="primary" disabled={busy}>{busy ? 'Criando...' : 'Criar conta'}</Button></div>
+      <p className="muted">Para funcionar, configure SUPABASE_SERVICE_ROLE_KEY na Vercel. Essa chave fica somente no backend.</p>
+    </form></div>}
+
+    {editing && <div className="modalBackdrop"><EditVendorModal vendor={editing} busy={busy} onClose={()=>setEditing(null)} onSave={updateVendor}/></div>}
+  </Shell>;
+}
+
+function AdminVendorsTable({ rows, onEdit, onPause, onActivate, onBlock, onDelete }) {
+  if (!rows?.length) return <p className="muted">Nenhum vendedor encontrado.</p>;
+  return <div className="table adminTable"><table><thead><tr><th>Vendedor</th><th>Loja</th><th>Plano</th><th>Status</th><th>Inscritos</th><th>Campanhas</th><th>Ações</th></tr></thead><tbody>{rows.map(v=><tr key={v.id}><td><b>{v.name}</b><small>{v.email}</small></td><td>{v.loja || '-'}</td><td><Badge tone={normalizePlan(v.planKey || v.plan)==='business'?'green':normalizePlan(v.planKey || v.plan)==='pro'?'violet':'gray'}>{nicePlan(v.planKey || v.plan)}</Badge></td><td><Badge tone={String(v.status).toLowerCase()==='ativo'?'green':String(v.status).toLowerCase()==='bloqueado'?'orange':'gray'}>{v.status}</Badge></td><td>{v.subscribers}</td><td>{v.campaigns}</td><td><div className="rowActions"><button onClick={()=>onEdit(v)}>Editar</button>{String(v.status).toLowerCase()==='ativo'?<button onClick={()=>onPause(v)}>Pausar</button>:<button onClick={()=>onActivate(v)}>Ativar</button>}<button onClick={()=>onBlock(v)}>Bloquear</button><button className="danger" onClick={()=>onDelete(v)}>Excluir</button></div></td></tr>)}</tbody></table></div>;
+}
+
+function EditVendorModal({ vendor, onClose, onSave, busy }) {
+  const [form,setForm]=useState({ name:vendor.name || '', storeName:vendor.loja || '', plan:normalizePlan(vendor.planKey || vendor.plan || 'gratis'), status:vendor.status || 'ativo' });
+  return <form className="adminModal" onSubmit={(e)=>{ e.preventDefault(); onSave(vendor, form); }}>
+    <div className="cardHead"><h3>Editar vendedor</h3><button type="button" className="iconBtn" onClick={onClose}>×</button></div>
+    <label>Nome</label><input value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/>
+    <label>Loja</label><input value={form.storeName} onChange={e=>setForm({...form,storeName:e.target.value})}/>
+    <div className="two"><div><label>Plano</label><select value={form.plan} onChange={e=>setForm({...form,plan:e.target.value})}><option value="gratis">Grátis</option><option value="pro">Pro</option><option value="business">Business</option></select></div><div><label>Status</label><select value={form.status} onChange={e=>setForm({...form,status:e.target.value})}><option value="ativo">Ativo</option><option value="pausado">Pausado</option><option value="bloqueado">Bloqueado</option><option value="excluido">Excluído</option></select></div></div>
+    <div className="modalActions"><Button type="button" onClick={onClose}>Cancelar</Button><Button className="primary" disabled={busy}>{busy ? 'Salvando...' : 'Salvar alterações'}</Button></div>
+  </form>;
 }
 
 function Table({ rows, cols }) {
@@ -1119,7 +1255,7 @@ function App(){
         const { data: campanhas } = await supabase.from('campanhas').select('id, loja_id');
         const vendors = (profiles || []).map((p) => {
           const lojaAtual = (lojas || []).find(l=>l.user_id===p.id);
-          return { id:p.id, name:p.nome || p.email, email:p.email, plan:nicePlan(p.plano || 'gratis'), status:p.status || 'ativo', subscribers:(clientes || []).filter(c=>c.loja_id===lojaAtual?.id).length, campaigns:(campanhas || []).filter(c=>c.loja_id===lojaAtual?.id).length, sales:0, tipo:p.tipo, loja:lojaAtual?.nome || '' };
+          return { id:p.id, user_id:p.id, loja_id:lojaAtual?.id || '', name:p.nome || p.email, email:p.email, plan:nicePlan(p.plano || 'gratis'), planKey: normalizePlan(p.plano || 'gratis'), status:p.status || 'ativo', subscribers:(clientes || []).filter(c=>c.loja_id===lojaAtual?.id).length, campaigns:(campanhas || []).filter(c=>c.loja_id===lojaAtual?.id).length, sales:0, tipo:p.tipo, loja:lojaAtual?.nome || '', lojaStatus:lojaAtual?.status || '' };
         });
         setData(prev => ({...prev, vendors}));
       } else {
