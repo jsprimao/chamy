@@ -823,15 +823,36 @@ function PublicCapture(){
         setStatus('Carregando loja...');
         let found = null;
         let lastError = null;
-        for (let attempt = 0; attempt < 5; attempt += 1) {
+
+        // Busca principal pelo endpoint público da Vercel.
+        // Isso evita travamentos em celulares onde o Supabase client pode demorar,
+        // falhar por cache do PWA ou ficar preso em carregamento silencioso.
+        for (let attempt = 0; attempt < 4; attempt += 1) {
           try {
-            found = await withTimeout(findLoja(identifier), 4500, 'Tempo de carregamento esgotado.');
+            const response = await withTimeout(
+              fetch(`/api/public-store?identifier=${encodeURIComponent(identifier)}`, { cache: 'no-store' }),
+              5500,
+              'Tempo de carregamento esgotado.'
+            );
+            const json = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(json.error || 'Não conseguimos carregar esta loja.');
+            found = json.loja || null;
             if (found || !alive) break;
           } catch (e) {
             lastError = e;
+            await wait(700);
           }
-          await wait(600);
         }
+
+        // Fallback direto pelo Supabase, caso a API pública ainda esteja em deploy/cold start.
+        if (!found) {
+          try {
+            found = await withTimeout(findLoja(identifier), 5500, 'Tempo de carregamento esgotado.');
+          } catch (e) {
+            lastError = e;
+          }
+        }
+
         if (!alive) return;
         if (found) {
           setLoja(found);
@@ -882,7 +903,7 @@ function PublicCapture(){
     } finally { setLoading(false); }
   }
 
-  if (loading && !loja) return <div className="publicPage"><Card className="publicCard loadingStore"><Logo/><div className="loaderCircle"></div><h2>Carregando loja...</h2><p>{status || 'Buscando informações da loja.'}</p><Button onClick={()=>window.location.reload()}>Tentar novamente</Button></Card></div>;
+  if (loading && !loja) return <div className="publicPage"><Card className="publicCard loadingStore"><Logo/><div className="loaderCircle"></div><h2>Carregando loja...</h2><p>{status || 'Buscando informações da loja.'}</p><p className="miniNote">Se não abrir em alguns segundos, toque em tentar novamente ou abra o link no Chrome/Safari.</p><Button onClick={()=>window.location.reload()}>Tentar novamente</Button></Card></div>;
   if (!loja) return <div className="publicPage"><Card className="publicCard"><Logo/><h2>Loja não encontrada</h2><p>{status || 'Confira o link recebido ou peça um novo convite para a loja.'}</p><div className="two"><Button className="primary" onClick={()=>window.location.reload()}>Tentar novamente</Button><a className="publicLink" href="/">Voltar para o Chamy</a></div></Card></div>;
 
   return <div className="publicPage">
