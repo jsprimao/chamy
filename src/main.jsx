@@ -360,7 +360,7 @@ function Login({ setUser }) {
   </div>;
 }
 
-const sellerMenu = [ ['dash','Dashboard',BarChart3], ['camp','Campanhas',Send], ['auto','Automação',Zap], ['clients','Inscritos',Users], ['capture','Captura Push',Bell], ['segments','Segmentos',Users], ['reports','Relatórios',TrendingUp], ['store','Loja',Store], ['plans','Planos',Crown], ['config','Configurações',Settings] ];
+const sellerMenu = [ ['dash','Dashboard',BarChart3], ['camp','Campanhas',Send], ['auto','Automação',Zap], ['clients','Inscritos',Users], ['capture','Captura Push',Bell], ['segments','Segmentos',Users], ['reports','Relatórios',TrendingUp], ['store','Loja',Store], ['plans','Planos',Crown], ['support','Suporte',LifeBuoy], ['config','Configurações',Settings] ];
 const adminMenu = [ ['dash','Dashboard Geral',BarChart3], ['vendors','Vendedores',Store], ['plans','Planos',Crown], ['global','Campanhas Globais',Send], ['support','Suporte',LifeBuoy], ['settings','Configurações',Settings] ];
 
 function Shell({ user, setUser, active, setActive, menu, children, data, onLogout }) {
@@ -728,6 +728,89 @@ function Capture({ loja, data, setData, refreshData, user }){
   }
   return <div className="campaignPage"><Card><h3>Widget de captura</h3><p className="muted">Mensagem exibida para visitantes aceitarem receber notificações.</p><label>Título</label><input defaultValue="Receba promoções e novidades"/><label>Mensagem</label><textarea defaultValue="Quer ser avisado quando chegarem ofertas e produtos novos?"/><div className="two"><Button className="primary" onClick={activatePush} disabled={loading}><Bell size={17}/> {loading ? 'Ativando...' : 'Ativar notificações neste navegador'}</Button><Button onClick={testLocal}><Play size={17}/> Teste local</Button></div><p className="authMessage">{status}</p><Button onClick={()=>navigator.clipboard?.writeText(widgetCode)}><Copy size={17}/> Copiar código do widget</Button><pre>{widgetCode}</pre><p className="muted">Observação: o widget público será a próxima etapa. Nesta versão, o botão acima registra seu navegador para teste real com OneSignal.</p></Card><Card className="preview"><Globe/><div className="popup"><Bell/><h3>Receba promoções e novidades</h3><p>Quer ser avisado quando chegarem ofertas e produtos novos?</p><div className="two"><Button className="primary" onClick={activatePush}>Sim, quero</Button><Button>Agora não</Button></div></div></Card></div>}
 
+
+function SupportPanel({ user, loja, data, refreshData }) {
+  const [subject, setSubject] = useState('');
+  const [message, setMessage] = useState('');
+  const [sending, setSending] = useState(false);
+  async function createTicket(e) {
+    e.preventDefault();
+    if (!subject.trim()) return alert('Informe o assunto do chamado.');
+    if (!message.trim()) return alert('Descreva rapidamente o que está acontecendo.');
+    setSending(true);
+    try {
+      const { error } = await supabase.from('tickets').insert({
+        user_id: user.id,
+        loja_id: loja?.id || null,
+        vendor: user.name,
+        user_email: user.email,
+        subject: subject.trim(),
+        message: message.trim(),
+        status: 'aberto'
+      });
+      if (error) throw error;
+      setSubject('');
+      setMessage('');
+      refreshData?.();
+      alert('Chamado enviado com sucesso. O suporte poderá acompanhar pelo Painel Master.');
+    } catch (e) {
+      alert(e.message || 'Não foi possível criar o chamado.');
+    } finally {
+      setSending(false);
+    }
+  }
+  const tickets = data?.tickets || [];
+  return <div className="supportGrid">
+    <Card>
+      <div className="cardHead"><div><h3>Preciso de ajuda</h3><p className="muted">Abra um chamado para o suporte da Chamy acompanhar sua conta.</p></div><LifeBuoy/></div>
+      <form onSubmit={createTicket}>
+        <label>Assunto</label><input value={subject} onChange={e=>setSubject(e.target.value)} placeholder="Ex.: notificação não chegou no celular" />
+        <label>Mensagem</label><textarea value={message} onChange={e=>setMessage(e.target.value)} placeholder="Explique o problema, em qual tela aconteceu e o que você estava tentando fazer." />
+        <Button className="primary" disabled={sending}>{sending ? 'Enviando...' : 'Abrir chamado'}</Button>
+      </form>
+      <div className="supportTips"><b>Dicas rápidas</b><span>Para notificações no celular, oriente seus clientes a instalar a loja como app/PWA e permitir notificações no navegador.</span><span>Inclua sempre um link de destino nas campanhas para levar o cliente ao catálogo, WhatsApp ou promoção.</span></div>
+    </Card>
+    <Card>
+      <div className="cardHead"><h3>Meus chamados</h3><Badge>{tickets.length}</Badge></div>
+      {!tickets.length ? <p className="muted">Nenhum chamado aberto ainda.</p> : <div className="ticketList">{tickets.map(t => <div className="ticketItem" key={t.id}><div><b>{t.subject}</b><small>{t.createdAt ? new Date(t.createdAt).toLocaleString('pt-BR') : ''}</small></div><Badge tone={String(t.status).toLowerCase()==='resolvido'?'green':String(t.status).toLowerCase()==='em análise'?'violet':'gray'}>{t.status}</Badge><p>{t.message}</p>{t.resposta && <p className="ticketAnswer"><b>Resposta:</b> {t.resposta}</p>}</div>)}</div>}
+    </Card>
+  </div>;
+}
+
+function AdminSupportPanel({ data, refreshData }) {
+  const [activeTicket, setActiveTicket] = useState(null);
+  const [busy, setBusy] = useState(false);
+  async function updateTicket(ticket, patch) {
+    setBusy(true);
+    try {
+      const { error } = await supabase.from('tickets').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', ticket.id);
+      if (error) throw error;
+      setActiveTicket(null);
+      refreshData?.();
+    } catch (e) {
+      alert(e.message || 'Não foi possível atualizar o chamado.');
+    } finally { setBusy(false); }
+  }
+  const rows = data?.tickets || [];
+  return <Card>
+    <div className="cardHead"><div><h3>Chamados de suporte</h3><p className="muted">Acompanhe dúvidas dos vendedores e resolva sem acessar o Supabase.</p></div><Button onClick={refreshData}>Atualizar</Button></div>
+    {!rows.length ? <p className="muted">Nenhum chamado aberto.</p> : <div className="ticketList adminTickets">{rows.map(t => <div className="ticketItem" key={t.id}><div className="ticketTop"><div><b>{t.subject}</b><small>{t.vendor} • {t.email || 'sem e-mail'} • {t.createdAt ? new Date(t.createdAt).toLocaleString('pt-BR') : ''}</small></div><Badge tone={String(t.status).toLowerCase()==='resolvido'?'green':String(t.status).toLowerCase()==='em análise'?'violet':'gray'}>{t.status}</Badge></div><p>{t.message}</p>{t.resposta && <p className="ticketAnswer"><b>Resposta enviada:</b> {t.resposta}</p>}<div className="rowActions"><button onClick={()=>setActiveTicket(t)}>Responder</button><button onClick={()=>updateTicket(t,{status:'em análise'})}>Em análise</button><button onClick={()=>updateTicket(t,{status:'resolvido'})}>Resolver</button></div></div>)}</div>}
+    {activeTicket && <div className="modalBackdrop"><TicketReplyModal ticket={activeTicket} busy={busy} onClose={()=>setActiveTicket(null)} onSave={updateTicket}/></div>}
+  </Card>;
+}
+
+function TicketReplyModal({ ticket, onClose, onSave, busy }) {
+  const [resposta, setResposta] = useState(ticket.resposta || '');
+  const [status, setStatus] = useState(ticket.status || 'em análise');
+  return <form className="adminModal" onSubmit={(e)=>{ e.preventDefault(); onSave(ticket, { resposta, status }); }}>
+    <div className="cardHead"><h3>Responder chamado</h3><button type="button" className="iconBtn" onClick={onClose}>×</button></div>
+    <p><b>{ticket.subject}</b></p><p className="muted">{ticket.message}</p>
+    <label>Status</label><select value={status} onChange={e=>setStatus(e.target.value)}><option value="aberto">Aberto</option><option value="em análise">Em análise</option><option value="resolvido">Resolvido</option></select>
+    <label>Resposta para o vendedor</label><textarea value={resposta} onChange={e=>setResposta(e.target.value)} placeholder="Digite a orientação ou solução do chamado." />
+    <div className="modalActions"><Button type="button" onClick={onClose}>Cancelar</Button><Button className="primary" disabled={busy}>{busy ? 'Salvando...' : 'Salvar resposta'}</Button></div>
+  </form>;
+}
+
 function Plans(){return <div className="plans">{Object.values(plans).map((p,i)=><Card className={i===1?'featured':''} key={p.label}><Badge tone={i===1?'violet':'gray'}>{p.badge}</Badge><h2>{p.label}</h2><h1>{p.price}<small>/mês</small></h1>{p.features.map(f=><p className="ok" key={f}><CheckCircle2/> {f}</p>)}<Button className="primary">Escolher plano</Button></Card>)}</div>}
 function Reports({ data, user }){
   const analytics = calculateAnalytics(data, user);
@@ -1094,7 +1177,7 @@ function TargetIcon(){ return <Users size={20}/>; }
 
 function Seller({ user, setUser, data, setData, loja, refreshData, onLogout }) {
   const [active,setActive]=useState('dash');
-  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={sellerMenu} data={data} onLogout={onLogout}>{active==='dash'&&<Dashboard data={data} user={user} setActive={setActive} loja={loja}/>} {active==='camp'&&<Campaigns data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData} user={user}/>} {active==='auto'&&<Automations/>} {active==='clients'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData} user={user}/>} {active==='capture'&&<Capture loja={loja} data={data} setData={setData} refreshData={refreshData} user={user}/>} {active==='segments'&&<Segments data={data}/>} {active==='reports'&&<Reports data={data} user={user}/>} {active==='store'&&<StorePanel loja={loja} refreshData={refreshData} user={user}/>} {active==='plans'&&<Plans/>} {active==='config'&&<ConfigPanel user={user} setUser={setUser}/>}</Shell>;
+  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={sellerMenu} data={data} onLogout={onLogout}>{active==='dash'&&<Dashboard data={data} user={user} setActive={setActive} loja={loja}/>} {active==='camp'&&<Campaigns data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData} user={user}/>} {active==='auto'&&<Automations/>} {active==='clients'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData} user={user}/>} {active==='capture'&&<Capture loja={loja} data={data} setData={setData} refreshData={refreshData} user={user}/>} {active==='segments'&&<Segments data={data}/>} {active==='reports'&&<Reports data={data} user={user}/>} {active==='store'&&<StorePanel loja={loja} refreshData={refreshData} user={user}/>} {active==='plans'&&<Plans/>} {active==='support'&&<SupportPanel user={user} loja={loja} data={data} refreshData={refreshData}/>} {active==='config'&&<ConfigPanel user={user} setUser={setUser}/>}</Shell>;
 }
 
 function Admin({ user, setUser, data, setData, refreshData }) {
@@ -1256,7 +1339,7 @@ function Admin({ user, setUser, data, setData, refreshData }) {
 
     {active==='plans'&&<Plans/>}
     {active==='global'&&<Card><h3>Campanha global para vendedores</h3><p className="muted">Área reservada para avisos internos da plataforma aos vendedores.</p><input defaultValue="Novidade no Chamy"/><textarea defaultValue="Agora você pode criar campanhas automáticas em poucos cliques."/><Button className="primary"><Send size={17}/> Enviar aviso geral</Button></Card>}
-    {active==='support'&&<Card><h3>Chamados</h3><Table rows={data.tickets} cols={['vendor','subject','status']}/></Card>}
+    {active==='support'&&<AdminSupportPanel data={data} refreshData={refreshData}/>}
     {active==='settings'&&<ConfigPanel user={user} setUser={setUser}/>}
 
     {creating && <div className="modalBackdrop"><form className="adminModal" onSubmit={createVendor}>
@@ -1314,11 +1397,16 @@ function App(){
         if (lojasError) throw lojasError;
         const { data: clientes } = await supabase.from('clientes').select('id, loja_id');
         const { data: campanhas } = await supabase.from('campanhas').select('id, loja_id');
+        let tickets = [];
+        try {
+          const { data: ticketsData, error: ticketsError } = await supabase.from('tickets').select('*').order('created_at', { ascending:false });
+          if (!ticketsError) tickets = ticketsData || [];
+        } catch (_) { tickets = []; }
         const vendors = (profiles || []).map((p) => {
           const lojaAtual = (lojas || []).find(l=>l.user_id===p.id);
           return { id:p.id, user_id:p.id, loja_id:lojaAtual?.id || '', name:p.nome || p.email, email:p.email, plan:nicePlan(p.plano || 'gratis'), planKey: normalizePlan(p.plano || 'gratis'), status:p.status || 'ativo', subscribers:(clientes || []).filter(c=>c.loja_id===lojaAtual?.id).length, campaigns:(campanhas || []).filter(c=>c.loja_id===lojaAtual?.id).length, sales:0, tipo:p.tipo, loja:lojaAtual?.nome || '', lojaStatus:lojaAtual?.status || '' };
         });
-        setData(prev => ({...prev, vendors}));
+        setData(prev => ({...prev, vendors, tickets: tickets.map(t => ({ id:t.id, vendor:t.vendor || t.nome_vendedor || t.user_email || 'Vendedor', email:t.user_email || '', subject:t.subject || 'Chamado', message:t.message || '', status:t.status || 'aberto', resposta:t.resposta || '', createdAt:t.created_at }))}));
       } else {
         const { data: lojas, error: lojaError } = await supabase.from('lojas').select('*').eq('user_id', currentUser.id).limit(1);
         if (lojaError) throw lojaError;
@@ -1339,7 +1427,13 @@ function App(){
           const { data: enviosData, error: enviosError } = await supabase.from('envios').select('campanha_id,clicou').in('campanha_id', campaignIds);
           if (!enviosError) envios = enviosData || [];
         }
+        let tickets = [];
+        try {
+          const { data: ticketsData, error: ticketsError } = await supabase.from('tickets').select('*').eq('user_id', currentUser.id).order('created_at', { ascending:false });
+          if (!ticketsError) tickets = ticketsData || [];
+        } catch (_) { tickets = []; }
         setData(prev => ({...prev,
+          tickets: tickets.map(t => ({ id:t.id, vendor:t.vendor || currentUser.name, email:t.user_email || currentUser.email, subject:t.subject || 'Chamado', message:t.message || '', status:t.status || 'aberto', resposta:t.resposta || '', createdAt:t.created_at })),
           customers: (clientes || []).map((c) => ({ id: c.id, name: c.nome || 'Cliente', city: c.cidade || '', whats: c.whatsapp || '', interest: c.interesse || 'Todos', status: c.status || 'ativo', last: c.created_at ? new Date(c.created_at).toLocaleDateString('pt-BR') : 'Supabase', createdAt: c.created_at, device: c.aceitou_push ? 'Push ativo' : 'Sem push', oneSignalSubscriptionId: c.onesignal_subscription_id || '' })),
           campaigns: (campanhas || []).map((c) => {
             const rows = envios.filter(e => e.campanha_id === c.id);
