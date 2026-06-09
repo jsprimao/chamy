@@ -514,8 +514,29 @@ const templates = [
   ['Mensagem Especial', Bell, '💛 Mensagem Especial', 'Preparamos uma novidade para você. Clique e confira!']
 ];
 
-function Campaigns({ data, setData, lojaId, refreshData, user }) {
-  const [form, setForm] = useState({
+function CampaignPreview({ form, imagePreview, loja }) {
+  const logo = loja?.logo_url || '/app-icon.png';
+  const image = imagePreview || form.imageUrl || '';
+  const title = form.title || 'Título da campanha';
+  const msg = form.msg || 'Mensagem da campanha';
+  return <div className="previewWrap">
+    <div className="previewHeader"><Bell size={17}/><span>Prévia da notificação</span><Badge tone="blue">Desktop/Mobile</Badge></div>
+    <div className="notificationPreview">
+      <div className="npTop"><img src={logo} alt="Logo da loja"/><div><b>{loja?.nome || 'Sua loja'}</b><small>agora</small></div></div>
+      <h4>{title}</h4>
+      <p>{msg}</p>
+      {image ? <img className="npImage" src={image} alt="Imagem da campanha"/> : <div className="npEmptyImage"><ImageIcon size={22}/><span>Imagem opcional da campanha</span></div>}
+      <small className="npLink">Clique abre: {form.link || 'URL de destino da campanha'}</small>
+    </div>
+    <div className="previewTips">
+      <span>✅ Confira texto, imagem e link antes de enviar.</span>
+      <span>📱 No celular, a exibição pode variar conforme navegador e sistema.</span>
+    </div>
+  </div>;
+}
+
+function Campaigns({ data, setData, lojaId, loja, refreshData, user }) {
+  const emptyForm = {
     title: '🔥 Promoção Relâmpago',
     msg: 'Ofertas especiais por tempo limitado. Clique e aproveite agora!',
     link: '',
@@ -525,20 +546,78 @@ function Campaigns({ data, setData, lojaId, refreshData, user }) {
     sendMode: 'agora',
     scheduledAt: '',
     imageUrl: ''
-  });
+  };
+  const [form, setForm] = useState(emptyForm);
+  const [editing, setEditing] = useState(null);
   const [imagePreview, setImagePreview] = useState('');
   const [imageFile, setImageFile] = useState(null);
   const [imageNote, setImageNote] = useState('');
   const [saving, setSaving] = useState(false);
 
+  function resetForm() {
+    setForm(emptyForm);
+    setEditing(null);
+    setImageFile(null);
+    setImagePreview('');
+    setImageNote('');
+  }
+
   function applyTemplate(title, msg) {
     setForm(prev => ({ ...prev, title, msg }));
+  }
+
+  function statusKey(status='') {
+    return String(status || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+
+  function canEdit(c) {
+    const st = statusKey(c.status);
+    return ['rascunho', 'programada', 'pausada', 'ativa'].includes(st) && Number(c.sent || 0) === 0;
+  }
+
+  function editCampaign(c) {
+    if (!canEdit(c)) return alert('Campanhas já enviadas não devem ser editadas para preservar o histórico. Use Duplicar campanha.');
+    setEditing(c);
+    setForm({
+      title: c.title || '',
+      msg: c.msg || '',
+      link: c.link || '',
+      audience: c.audience || 'Todos',
+      freq: c.freq || 'Envio único',
+      duration: c.duration || '1 dia',
+      sendMode: statusKey(c.status) === 'programada' ? 'agendar' : 'agora',
+      scheduledAt: c.scheduledAt ? new Date(c.scheduledAt).toISOString().slice(0,16) : '',
+      imageUrl: c.imageUrl || ''
+    });
+    setImageFile(null);
+    setImagePreview(c.imageUrl || '');
+    setImageNote('Editando campanha existente. Revise a prévia antes de salvar.');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function duplicateCampaign(c) {
+    setEditing(null);
+    setForm({
+      title: `${c.title || 'Campanha'} (Cópia)`,
+      msg: c.msg || '',
+      link: c.link || '',
+      audience: c.audience || 'Todos',
+      freq: c.freq || 'Envio único',
+      duration: c.duration || '1 dia',
+      sendMode: 'agora',
+      scheduledAt: '',
+      imageUrl: c.imageUrl || ''
+    });
+    setImageFile(null);
+    setImagePreview(c.imageUrl || '');
+    setImageNote('Campanha duplicada como novo rascunho. Ajuste e salve ou envie novamente.');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   async function selectImage(file) {
     if (!file) {
       setImageFile(null);
-      setImagePreview('');
+      setImagePreview(form.imageUrl || '');
       setImageNote('');
       return;
     }
@@ -550,52 +629,75 @@ function Campaigns({ data, setData, lojaId, refreshData, user }) {
       setImageNote('Imagem ajustada automaticamente para 1200 x 628 px, sem cortar o conteúdo principal.');
     } catch (e) {
       setImageFile(null);
-      setImagePreview('');
+      setImagePreview(form.imageUrl || '');
       setImageNote('');
       alert(e.message || 'Não foi possível processar a imagem.');
     }
   }
 
-  async function addCampaign(){
+  async function saveCampaign(saveAs = 'ativa'){
     if (!lojaId) return alert('Nenhuma loja encontrada para este usuário.');
     const planLimits = getPlanLimits(user?.plan || 'gratis');
-    if (planLimits.campaigns && (data?.campaigns?.length || 0) >= planLimits.campaigns) {
+    if (!editing && planLimits.campaigns && (data?.campaigns?.length || 0) >= planLimits.campaigns) {
       return alert(`Você atingiu o limite de ${planLimits.campaigns} campanhas do plano ${planLimits.label}. Faça upgrade para continuar.`);
     }
+    const title = String(form.title || '').trim();
+    const msg = String(form.msg || '').trim();
     const link = String(form.link || '').trim();
-    if (!link) return alert('Informe a URL de destino da campanha. Ela pode ser um catálogo, site, promoção ou WhatsApp.');
-    if (!/^https?:\/\//i.test(link)) return alert('A URL de destino precisa começar com https:// ou http://');
-    if (!String(form.title || '').trim()) return alert('Informe o título da campanha.');
-    if (!String(form.msg || '').trim()) return alert('Informe a mensagem da campanha.');
-    if (form.sendMode === 'agendar' && !form.scheduledAt) return alert('Escolha a data e o horário do agendamento.');
+    if (!title) return alert('Informe o título da campanha.');
+    if (!msg) return alert('Informe a mensagem da campanha.');
+    if (saveAs !== 'rascunho' && !link) return alert('Informe a URL de destino da campanha. Ela pode ser um catálogo, site, promoção ou WhatsApp.');
+    if (link && !/^https?:\/\//i.test(link)) return alert('A URL precisa começar com https:// ou http://');
     const scheduledDate = form.sendMode === 'agendar' ? new Date(form.scheduledAt) : null;
-    if (scheduledDate && scheduledDate.getTime() <= Date.now()) return alert('O agendamento precisa ser para uma data/hora futura.');
+    if (saveAs !== 'rascunho' && form.sendMode === 'agendar' && (!form.scheduledAt || Number.isNaN(scheduledDate.getTime()))) return alert('Informe a data e horário do agendamento.');
+    if (saveAs !== 'rascunho' && scheduledDate && scheduledDate.getTime() <= Date.now()) return alert('O agendamento precisa ser para uma data/hora futura.');
 
     setSaving(true);
     try {
       let finalImageUrl = form.imageUrl || '';
       if (imageFile) finalImageUrl = await uploadCampaignImage(imageFile, lojaId);
       const duracao = parseInt(form.duration, 10) || 1;
-      const status = form.sendMode === 'agendar' ? 'Programada' : 'Ativa';
-      const { data: created, error } = await supabase.from('campanhas').insert({
+      const status = saveAs === 'rascunho' ? 'Rascunho' : (form.sendMode === 'agendar' ? 'Programada' : 'Ativa');
+      const payload = {
         loja_id: lojaId,
-        titulo: form.title,
-        mensagem: form.msg,
-        link,
+        titulo: title,
+        mensagem: msg,
+        link: link || null,
         imagem_url: finalImageUrl || null,
         publico: form.audience,
         frequencia: form.freq,
         duracao_dias: duracao,
         status,
-        envio_modo: form.sendMode,
-        agendada_para: scheduledDate ? scheduledDate.toISOString() : null
-      }).select('*').single();
-      if (error) throw error;
-      setData({...data, campaigns:[{ id:created.id, title:created.titulo, msg:created.mensagem, link:created.link || '', imageUrl:created.imagem_url || '', status:created.status, audience:created.publico, freq:created.frequencia, duration:`${created.duracao_dias} dias`, scheduledAt:created.agendada_para, sent:0, clicks:0, rate:'0%', date:'Agora' }, ...data.campaigns]});
-      setImageFile(null);
-      setImagePreview('');
+        envio_modo: saveAs === 'rascunho' ? 'rascunho' : form.sendMode,
+        agendada_para: status === 'Programada' && scheduledDate ? scheduledDate.toISOString() : null
+      };
+
+      let created;
+      if (editing) {
+        const { data: updated, error } = await supabase.from('campanhas').update(payload).eq('id', editing.id).select('*').single();
+        if (error) throw error;
+        created = updated;
+        setData({...data, campaigns: data.campaigns.map(c => c.id === editing.id ? {
+          ...c,
+          title: updated.titulo,
+          msg: updated.mensagem,
+          link: updated.link || '',
+          imageUrl: updated.imagem_url || '',
+          status: updated.status,
+          audience: updated.publico,
+          freq: updated.frequencia,
+          duration: `${updated.duracao_dias || 1} dias`,
+          scheduledAt: updated.agendada_para
+        } : c)});
+      } else {
+        const { data: inserted, error } = await supabase.from('campanhas').insert(payload).select('*').single();
+        if (error) throw error;
+        created = inserted;
+        setData({...data, campaigns:[{ id:created.id, title:created.titulo, msg:created.mensagem, link:created.link || '', imageUrl:created.imagem_url || '', status:created.status, audience:created.publico, freq:created.frequencia, duration:`${created.duracao_dias || 1} dias`, scheduledAt:created.agendada_para, sent:0, clicks:0, rate:'0%', date:'Agora' }, ...data.campaigns]});
+      }
+      resetForm();
       refreshData?.();
-      alert(status === 'Programada' ? 'Campanha agendada com sucesso.' : 'Campanha criada com sucesso. Você pode enviar agora na lista de campanhas.');
+      alert(editing ? 'Campanha atualizada com sucesso.' : status === 'Rascunho' ? 'Rascunho salvo com sucesso.' : status === 'Programada' ? 'Campanha agendada com sucesso.' : 'Campanha criada com sucesso. Você pode enviar agora na lista de campanhas.');
     } catch (error) {
       alert(error.message || 'Falha ao salvar campanha.');
     } finally {
@@ -616,7 +718,7 @@ function Campaigns({ data, setData, lojaId, refreshData, user }) {
     setData({...data,campaigns:data.campaigns.filter(x=>x.id!==c.id)});
   }
   async function sendCampaign(c){
-    if (!c.link) return alert('Esta campanha não possui URL de destino. Edite ou crie uma nova campanha com link de catálogo, promoção, site ou WhatsApp.');
+    if (!c.link) return alert('Esta campanha não possui URL de destino. Edite ou duplique a campanha e informe um link de catálogo, promoção, site ou WhatsApp.');
     if (!confirm(`Enviar a campanha "${c.title}" agora?`)) return;
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -640,24 +742,35 @@ function Campaigns({ data, setData, lojaId, refreshData, user }) {
       alert(e.message || 'Falha ao enviar campanha.');
     }
   }
-  function testNotify(){ if(!('Notification' in window)) return alert('Seu navegador não suporta notificações.'); Notification.requestPermission().then(p=> p==='granted' ? new Notification(form.title,{body:form.msg,icon:'/favicon.png', image:imagePreview || form.imageUrl || undefined}) : alert('Permissão de notificação negada.')); }
+  function testNotify(){ if(!('Notification' in window)) return alert('Seu navegador não suporta notificações.'); Notification.requestPermission().then(p=> p==='granted' ? new Notification(form.title,{body:form.msg,icon:loja?.logo_url || '/favicon.png', image:imagePreview || form.imageUrl || undefined}) : alert('Permissão de notificação negada.')); }
   const planKey = normalizePlan(user?.plan || 'gratis');
   const imageLocked = planKey === 'gratis';
   const scheduleLocked = planKey === 'gratis';
-  return <div className="campaignPage"><Card className="creator"><h3>Nova campanha</h3><p className="muted">Escolha um modelo pronto ou personalize. Campanhas com imagem chamam mais atenção e são liberadas no plano Pro.</p><div className="templates">{templates.map(([name,Icon,title,msg])=><button key={name} onClick={()=>applyTemplate(title,msg)}><Icon/><b>{name}</b></button>)}</div><label>Título</label><input value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/><label>Mensagem</label><textarea value={form.msg} onChange={e=>setForm({...form,msg:e.target.value})}/><label>URL de destino da campanha <b className="required">obrigatória</b></label><input value={form.link} onChange={e=>setForm({...form,link:e.target.value})} placeholder="https://catalogo.com.br/promocao ou https://wa.me/55..."/><p className="miniNote">Ao clicar na notificação, o cliente deve ir direto para uma oferta, catálogo, site ou WhatsApp.</p>
-  <label>Imagem da campanha {imageLocked && <b className="required">Pro</b>}</label>
-  <div className="imageCampaignBox">
-    <div className="campaignImagePreview">{imagePreview || form.imageUrl ? <img src={imagePreview || form.imageUrl} alt="Imagem da campanha" /> : <ImageIcon size={28}/>}</div>
-    <div><input type="file" accept="image/png,image/jpeg,image/webp" disabled={imageLocked} onChange={e=>selectImage(e.target.files?.[0])}/><small>{imageLocked ? 'Disponível nos planos Pro e Business.' : 'Recomendado: 1200 x 628 px. Você pode enviar PNG, JPG ou WEBP; o Chamy ajusta automaticamente para a proporção ideal sem cortar a imagem principal.'}</small>{imageNote && <small className="successTiny">{imageNote}</small>}</div>
-  </div>
-  <div className="two"><div><label>Público</label><select value={form.audience} onChange={e=>setForm({...form,audience:e.target.value})}><option>Todos</option><option>Promoções</option><option>Novidades</option><option>Clientes inativos</option><option>Quem clicou na última campanha</option></select></div><div><label>Frequência</label><select value={form.freq} onChange={e=>setForm({...form,freq:e.target.value})}><option>Envio único</option><option>A cada 4 horas</option><option>Diária</option><option>Semanal</option></select></div></div>
-  <label>Duração</label><select value={form.duration} onChange={e=>setForm({...form,duration:e.target.value})}><option>1 dia</option><option>3 dias</option><option>7 dias</option><option>Até pausar</option></select>
-  <div className="scheduleBox"><label>Modo de envio {scheduleLocked && <b className="required">Pro</b>}</label><div className="two"><button type="button" className={form.sendMode==='agora'?'choice active':'choice'} onClick={()=>setForm({...form,sendMode:'agora'})}><Send size={16}/> Criar para enviar agora</button><button type="button" className={form.sendMode==='agendar'?'choice active':'choice'} disabled={scheduleLocked} onClick={()=>setForm({...form,sendMode:'agendar'})}><CalendarClock size={16}/> Agendar envio</button></div>{form.sendMode==='agendar' && <><label>Data e horário do envio</label><input type="datetime-local" value={form.scheduledAt} onChange={e=>setForm({...form,scheduledAt:e.target.value})}/><p className="miniNote">O envio agendado depende da função automática do servidor. Configure SUPABASE_SERVICE_ROLE_KEY na Vercel para processar agendamentos.</p></>}</div>
-  <label className="check"><input type="checkbox" defaultChecked/> Não enviar de madrugada</label><label className="check"><input type="checkbox" defaultChecked/> Não repetir para quem já clicou</label><div className="two"><Button className="primary" onClick={addCampaign} disabled={saving}><Play size={17}/> {saving ? 'Salvando...' : form.sendMode==='agendar' ? 'Agendar campanha' : 'Salvar campanha'}</Button><Button onClick={testNotify}><Bell size={17}/> Testar notificação</Button></div></Card><Card><div className="cardHead"><h3>Campanhas</h3><Badge>{data.campaigns.length} criadas</Badge></div><CampaignList data={data} onToggle={toggleCampaign} onDelete={deleteCampaign} onSend={sendCampaign}/></Card></div>;
+  return <div className="campaignPage campaignPageV26">
+    <Card className="creator">
+      <div className="cardHead"><div><h3>{editing ? 'Editar campanha' : 'Nova campanha'}</h3><p className="muted">Escolha um modelo, revise a prévia e salve como rascunho antes de enviar.</p></div>{editing && <Badge tone="blue">Editando</Badge>}</div>
+      <div className="templates">{templates.map(([name,Icon,title,msg])=><button key={name} onClick={()=>applyTemplate(title,msg)}><Icon/><b>{name}</b></button>)}</div>
+      <label>Título</label><input value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
+      <label>Mensagem</label><textarea value={form.msg} onChange={e=>setForm({...form,msg:e.target.value})}/>
+      <label>URL de destino da campanha</label><input value={form.link} onChange={e=>setForm({...form,link:e.target.value})} placeholder="https://catalogo.com.br/promocao ou https://wa.me/55..."/><p className="miniNote">Obrigatória para enviar. Em rascunhos, você pode preencher depois.</p>
+      <label>Imagem da campanha {imageLocked && <b className="required">Pro</b>}</label>
+      <div className="imageCampaignBox">
+        <div className="campaignImagePreview">{imagePreview || form.imageUrl ? <img src={imagePreview || form.imageUrl} alt="Imagem da campanha" /> : <ImageIcon size={28}/>}</div>
+        <div><input type="file" accept="image/png,image/jpeg,image/webp" disabled={imageLocked} onChange={e=>selectImage(e.target.files?.[0])}/><small>{imageLocked ? 'Disponível nos planos Pro e Business.' : 'Recomendado: 1200 x 628 px. O Chamy ajusta automaticamente para a proporção ideal.'}</small>{imageNote && <small className="successTiny">{imageNote}</small>}</div>
+      </div>
+      <div className="two"><div><label>Público</label><select value={form.audience} onChange={e=>setForm({...form,audience:e.target.value})}><option>Todos</option><option>Promoções</option><option>Novidades</option><option>Clientes inativos</option><option>Quem clicou na última campanha</option></select></div><div><label>Frequência</label><select value={form.freq} onChange={e=>setForm({...form,freq:e.target.value})}><option>Envio único</option><option>A cada 4 horas</option><option>Diária</option><option>Semanal</option></select></div></div>
+      <label>Duração</label><select value={form.duration} onChange={e=>setForm({...form,duration:e.target.value})}><option>1 dia</option><option>3 dias</option><option>7 dias</option><option>Até pausar</option></select>
+      <div className="scheduleBox"><label>Modo de envio {scheduleLocked && <b className="required">Pro</b>}</label><div className="two"><button type="button" className={form.sendMode==='agora'?'choice active':'choice'} onClick={()=>setForm({...form,sendMode:'agora'})}><Send size={16}/> Criar para enviar agora</button><button type="button" className={form.sendMode==='agendar'?'choice active':'choice'} disabled={scheduleLocked} onClick={()=>setForm({...form,sendMode:'agendar'})}><CalendarClock size={16}/> Agendar envio</button></div>{form.sendMode==='agendar' && <><label>Data e horário do envio</label><input type="datetime-local" value={form.scheduledAt} onChange={e=>setForm({...form,scheduledAt:e.target.value})}/><p className="miniNote">O envio agendado depende da função automática do servidor.</p></>}</div>
+      <div className="two"><Button onClick={()=>saveCampaign('rascunho')} disabled={saving}><Copy size={17}/> {saving ? 'Salvando...' : 'Salvar rascunho'}</Button><Button className="primary" onClick={()=>saveCampaign('ativa')} disabled={saving}><Play size={17}/> {saving ? 'Salvando...' : form.sendMode==='agendar' ? 'Agendar campanha' : editing ? 'Salvar alterações' : 'Salvar campanha'}</Button></div>
+      <div className="two"><Button onClick={testNotify}><Bell size={17}/> Enviar teste para mim</Button><Button onClick={resetForm}>Limpar</Button></div>
+    </Card>
+    <Card className="previewCard"><CampaignPreview form={form} imagePreview={imagePreview} loja={loja}/></Card>
+    <Card className="campaignLibrary"><div className="cardHead"><div><h3>Minhas campanhas</h3><p className="muted">Edite rascunhos e agendadas. Duplique enviadas para reaproveitar sem alterar o histórico.</p></div><Badge>{data.campaigns.length} criadas</Badge></div><CampaignList data={data} onToggle={toggleCampaign} onDelete={deleteCampaign} onSend={sendCampaign} onEdit={editCampaign} onDuplicate={duplicateCampaign} canEdit={canEdit}/></Card>
+  </div>;
 }
 
-function CampaignList({ data, onToggle, onDelete, onSend }) {
-  return <div className="campaignList">{data.campaigns.map(c=><div className="campaign" key={c.id}>{c.imageUrl && <img className="campaignThumb" src={c.imageUrl} alt=""/>}<div className="campaignInfo"><h4>{c.title}</h4><p>{c.msg}</p><small>{c.freq} • {c.duration}{c.scheduledAt ? ` • agendada: ${new Date(c.scheduledAt).toLocaleString('pt-BR')}` : ''}</small>{c.link && <small className="campaignLink">Destino: {c.link}</small>}</div><div className="metrics"><span><b>{c.sent}</b>Enviados</span><span><b>{c.clicks}</b>Cliques</span><span><b>{c.rate}</b>Taxa</span><Badge tone={c.status==='Ativa'?'green':c.status==='Programada'?'violet':c.status==='Enviada'?'blue':'gray'}>{c.status}</Badge>{onToggle&&<><Button className="primary" onClick={()=>onSend?.(c)}><Send size={16}/> Enviar agora</Button><Button onClick={()=>onToggle(c)}>{c.status==='Ativa'?<Pause size={16}/>:<Play size={16}/>}</Button><Button onClick={()=>onDelete(c)}><Trash2 size={16}/></Button></>}<MoreVertical size={18}/></div></div>)}</div>;
+function CampaignList({ data, onToggle, onDelete, onSend, onEdit, onDuplicate, canEdit }) {
+  return <div className="campaignList">{data.campaigns.map(c=><div className="campaign" key={c.id}>{c.imageUrl && <img className="campaignThumb" src={c.imageUrl} alt=""/>}<div className="campaignInfo"><h4>{c.title}</h4><p>{c.msg}</p><small>{c.freq} • {c.duration}{c.scheduledAt ? ` • agendada: ${new Date(c.scheduledAt).toLocaleString('pt-BR')}` : ''}</small>{c.link && <small className="campaignLink">Destino: {c.link}</small>}</div><div className="metrics"><span><b>{c.sent}</b>Enviados</span><span><b>{c.clicks}</b>Cliques</span><span><b>{c.rate}</b>Taxa</span><Badge tone={c.status==='Ativa'?'green':c.status==='Programada'?'violet':c.status==='Enviada'?'blue':String(c.status).toLowerCase()==='rascunho'?'gray':'gray'}>{c.status}</Badge>{onToggle&&<><Button className="primary" onClick={()=>onSend?.(c)}><Send size={16}/> Enviar agora</Button>{canEdit?.(c) ? <Button onClick={()=>onEdit?.(c)}>Editar</Button> : <Button onClick={()=>onDuplicate?.(c)}>Duplicar</Button>}<Button onClick={()=>onDuplicate?.(c)}><Copy size={16}/> Copiar</Button><Button onClick={()=>onToggle(c)}>{c.status==='Ativa'?<Pause size={16}/>:<Play size={16}/>}</Button><Button onClick={()=>onDelete(c)}><Trash2 size={16}/></Button></>}<MoreVertical size={18}/></div></div>)}</div>;
 }
 
 function Customers({ data, setData, lojaId, refreshData, user }) {
@@ -1177,7 +1290,7 @@ function TargetIcon(){ return <Users size={20}/>; }
 
 function Seller({ user, setUser, data, setData, loja, refreshData, onLogout }) {
   const [active,setActive]=useState('dash');
-  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={sellerMenu} data={data} onLogout={onLogout}>{active==='dash'&&<Dashboard data={data} user={user} setActive={setActive} loja={loja}/>} {active==='camp'&&<Campaigns data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData} user={user}/>} {active==='auto'&&<Automations/>} {active==='clients'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData} user={user}/>} {active==='capture'&&<Capture loja={loja} data={data} setData={setData} refreshData={refreshData} user={user}/>} {active==='segments'&&<Segments data={data}/>} {active==='reports'&&<Reports data={data} user={user}/>} {active==='store'&&<StorePanel loja={loja} refreshData={refreshData} user={user}/>} {active==='plans'&&<Plans/>} {active==='support'&&<SupportPanel user={user} loja={loja} data={data} refreshData={refreshData}/>} {active==='config'&&<ConfigPanel user={user} setUser={setUser}/>}</Shell>;
+  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={sellerMenu} data={data} onLogout={onLogout}>{active==='dash'&&<Dashboard data={data} user={user} setActive={setActive} loja={loja}/>} {active==='camp'&&<Campaigns data={data} setData={setData} lojaId={loja?.id} loja={loja} refreshData={refreshData} user={user}/>} {active==='auto'&&<Automations/>} {active==='clients'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData} user={user}/>} {active==='capture'&&<Capture loja={loja} data={data} setData={setData} refreshData={refreshData} user={user}/>} {active==='segments'&&<Segments data={data}/>} {active==='reports'&&<Reports data={data} user={user}/>} {active==='store'&&<StorePanel loja={loja} refreshData={refreshData} user={user}/>} {active==='plans'&&<Plans/>} {active==='support'&&<SupportPanel user={user} loja={loja} data={data} refreshData={refreshData}/>} {active==='config'&&<ConfigPanel user={user} setUser={setUser}/>}</Shell>;
 }
 
 function Admin({ user, setUser, data, setData, refreshData }) {
