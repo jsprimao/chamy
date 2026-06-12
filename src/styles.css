@@ -68,3 +68,40 @@
 
 /* V26 - campanhas: prévia, edição, duplicação e rascunhos */
 .campaignPageV26{display:grid;grid-template-columns:minmax(340px,1fr) minmax(300px,.9fr);gap:18px;align-items:start}.campaignPageV26 .campaignLibrary{grid-column:1/-1}.previewWrap{display:flex;flex-direction:column;gap:14px}.previewHeader{display:flex;align-items:center;gap:8px;justify-content:space-between}.notificationPreview{border:1px solid rgba(15,23,42,.12);border-radius:22px;padding:16px;background:linear-gradient(180deg,#fff,#f8fafc);box-shadow:0 18px 40px rgba(15,23,42,.08);max-width:420px;margin:auto;width:100%}.npTop{display:flex;gap:10px;align-items:center;margin-bottom:12px}.npTop img{width:42px;height:42px;border-radius:14px;object-fit:cover;background:#fff;border:1px solid rgba(15,23,42,.08)}.npTop b{display:block;font-size:14px}.npTop small{color:#64748b}.notificationPreview h4{font-size:18px;margin:6px 0;color:#111827}.notificationPreview p{font-size:14px;line-height:1.45;color:#334155;margin:0 0 12px}.npImage{width:100%;aspect-ratio:1200/628;object-fit:cover;border-radius:16px;border:1px solid rgba(15,23,42,.08);background:#f1f5f9}.npEmptyImage{width:100%;aspect-ratio:1200/628;border-radius:16px;background:#f1f5f9;border:1px dashed rgba(15,23,42,.2);display:flex;align-items:center;justify-content:center;gap:8px;color:#64748b}.npLink{display:block;margin-top:10px;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.previewTips{display:grid;gap:8px;color:#475569;font-size:13px;background:#f8fafc;border:1px solid rgba(15,23,42,.08);border-radius:18px;padding:12px}.campaignLibrary .campaign .metrics{min-width:360px}.campaignLibrary .btn{padding:8px 10px;font-size:12px}.choice:disabled{opacity:.45;cursor:not-allowed}@media(max-width:1000px){.campaignPageV26{grid-template-columns:1fr}.campaignLibrary .campaign .metrics{min-width:0}}
+
+
+/* V27 - experiência premium, onboarding, saúde, resultados e ajuda contextual */
+.firstStepsPanel.v27{background:linear-gradient(135deg,#ffffff,#f8fbff);border-color:#dbeafe}
+.onboardingProgress{height:12px;background:#e5e7eb;border-radius:999px;overflow:hidden;margin:14px 0 18px}
+.onboardingProgress i{display:block;height:100%;background:linear-gradient(135deg,#5b21e8,#d31bc5,#ff8800);border-radius:999px;transition:.25s}
+.firstStepsPanel.v27 .stepsList button{align-items:flex-start;text-align:left;gap:12px}
+.firstStepsPanel.v27 .stepsList small{display:block;font-size:12px;color:#64748b;font-weight:600;margin-top:3px;line-height:1.35}
+.dashboardAssistGrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px;margin:18px 0}
+.healthCard,.smartAlerts,.pwaTip{min-height:100%}
+.healthMeter{height:10px;background:#e5e7eb;border-radius:999px;overflow:hidden;margin:13px 0}
+.healthMeter i{display:block;height:100%;background:linear-gradient(135deg,#22c55e,#10b981);border-radius:999px}
+.healthChecks{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}
+.healthChecks span{font-size:12px;font-weight:800;color:#64748b;background:#f8fafc;border:1px solid #e5e7eb;border-radius:999px;padding:8px 10px}
+.healthChecks span.okLine{color:#15803d;background:#dcfce7;border-color:#bbf7d0}
+.smartAlerts .alertList{display:grid;gap:9px}
+.smartAlerts .alertList button{border:1px solid #e8edf5;background:#fff;border-radius:16px;padding:12px;text-align:left;cursor:pointer}
+.smartAlerts .alertList button:hover{border-color:#c4b5fd;box-shadow:0 8px 24px rgba(124,58,237,.08)}
+.smartAlerts .alertList b{display:block;color:#111827;margin-bottom:4px}
+.smartAlerts .alertList span{display:block;color:#64748b;font-size:13px;line-height:1.4}
+.smartAlerts .alertList em{display:block;color:#7c3aed;font-weight:900;font-style:normal;margin-top:6px;font-size:12px}
+.helpTip{display:inline-flex;vertical-align:middle;position:relative;margin-left:6px;color:#7c3aed;cursor:help}
+.helpTip>span{display:none;position:absolute;z-index:20;left:50%;transform:translateX(-50%);top:24px;width:230px;background:#111827;color:#fff;border-radius:12px;padding:10px;font-size:12px;line-height:1.35;box-shadow:0 16px 40px rgba(15,23,42,.24)}
+.helpTip:hover>span{display:block}
+.helpTip b{display:block;color:#fff;margin-bottom:4px}
+.resultsPage{display:grid;gap:20px}
+.resultsHero{display:flex;justify-content:space-between;align-items:center;gap:20px;background:linear-gradient(135deg,#fff,#f5f3ff)}
+.resultsHero h2{font-size:34px;margin:0 0 8px}
+.resultsHero p{color:#64748b;max-width:720px;line-height:1.5;margin:0}
+.resultsGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.resultsGrid h2{font-size:26px;margin:8px 0;color:#111827}
+.pwaTip{background:linear-gradient(145deg,#eef2ff,#fff);border:1px solid #c7d2fe;border-radius:22px;padding:18px}
+.pwaTip.compact{margin-top:14px}
+.pwaTip h3{margin:0 0 6px}
+.pwaTip p{margin:0 0 12px;color:#475569;line-height:1.45}
+.pwaTip .installSteps{display:grid;gap:5px;color:#475569;font-size:13px}
+@media(max-width:1100px){.dashboardAssistGrid,.resultsGrid{grid-template-columns:1fr}.resultsHero{align-items:flex-start;flex-direction:column}}

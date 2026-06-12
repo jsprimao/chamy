@@ -148,26 +148,109 @@ function ProgressLine({ label, value, limit, pct }) {
   return <div className="usageLine"><div><span>{label}</span><b>{limit ? `${value} / ${limit.toLocaleString('pt-BR')}` : `${value} / ilimitado`}</b></div><div className="bar"><i style={{width:`${pct}%`}} /></div></div>;
 }
 
-function FirstSteps({ loja, data, setActive }) {
+function HelpTip({ title, text }) {
+  return <span className="helpTip" title={`${title}: ${text}`}><HelpCircle size={15}/><span><b>{title}</b>{text}</span></span>;
+}
+
+function buildOnboardingSteps(loja, data, setActive) {
   const publicLink = loja?.id ? `${window.location.origin}/loja/${loja.id}` : '';
-  const steps = [
-    { label: 'Configurar dados da loja', done: Boolean(loja?.nome), action: () => setActive('store') },
-    { label: 'Enviar logo da loja', done: Boolean(loja?.logo_url), action: () => setActive('store') },
-    { label: 'Divulgar link público', done: Boolean(publicLink), action: () => setActive('store') },
-    { label: 'Captar primeiro inscrito', done: (data?.customers?.length || 0) > 0, action: () => setActive('capture') },
-    { label: 'Criar primeira campanha', done: (data?.campaigns?.length || 0) > 0, action: () => setActive('camp') },
-    { label: 'Gerar primeiros envios', done: (data?.campaigns || []).some(c => Number(c.sent || 0) > 0), action: () => setActive('camp') }
+  return [
+    { label: 'Configurar dados da loja', done: Boolean(loja?.nome), action: () => setActive('store'), hint: 'Nome, WhatsApp e site ajudam o cliente a reconhecer sua marca.' },
+    { label: 'Adicionar logo', done: Boolean(loja?.logo_url), action: () => setActive('store'), hint: 'A logo aparece na página pública e nas notificações.' },
+    { label: 'Compartilhar link ou QR Code', done: Boolean(publicLink), action: () => setActive('store'), hint: 'Divulgue para captar inscritos.' },
+    { label: 'Conquistar 10 inscritos', done: (data?.customers?.length || 0) >= 10, action: () => setActive('capture'), hint: 'Com 10 inscritos já dá para testar campanhas reais.' },
+    { label: 'Criar primeira campanha', done: (data?.campaigns?.length || 0) > 0, action: () => setActive('camp'), hint: 'Use um template pronto para começar rápido.' },
+    { label: 'Gerar primeiro clique', done: (data?.campaigns || []).some(c => Number(c.clicks || 0) > 0), action: () => setActive('reports'), hint: 'Cliques mostram que os clientes estão voltando.' }
   ];
-  return <Card className="firstStepsPanel">
-    <div className="cardHead"><h3>Primeiros passos</h3><Badge tone="green">Guia rápido</Badge></div>
-    <p className="muted">Complete estes passos para deixar sua loja pronta para captar clientes e vender mais com notificações.</p>
+}
+
+function FirstSteps({ loja, data, setActive }) {
+  const steps = buildOnboardingSteps(loja, data, setActive);
+  const doneCount = steps.filter(s => s.done).length;
+  const pct = Math.round((doneCount / steps.length) * 100);
+  return <Card className="firstStepsPanel v27">
+    <div className="cardHead">
+      <div><h3>🚀 Primeiros passos</h3><p className="muted">Complete o guia para deixar sua loja pronta para vender com notificações.</p></div>
+      <Badge tone={pct === 100 ? 'green' : 'violet'}>{pct}% pronto</Badge>
+    </div>
+    <div className="onboardingProgress"><i style={{width:`${pct}%`}} /></div>
     <div className="stepsList">
       {steps.map((step, idx) => <button key={step.label} onClick={step.action} className={step.done ? 'done' : ''}>
         {step.done ? <CheckCircle2 size={18}/> : <span>{idx + 1}</span>}
         <b>{step.label}</b>
+        <small>{step.hint}</small>
       </button>)}
     </div>
   </Card>;
+}
+
+function StoreHealth({ loja, data, setActive }) {
+  const customers = data?.customers?.length || 0;
+  const campaigns = data?.campaigns?.length || 0;
+  const clicks = (data?.campaigns || []).reduce((sum, c) => sum + Number(c.clicks || 0), 0);
+  const score = [
+    Boolean(loja?.logo_url),
+    customers >= 10,
+    campaigns > 0,
+    clicks > 0
+  ].filter(Boolean).length;
+  const level = score >= 4 ? 'Excelente' : score >= 3 ? 'Boa' : score >= 2 ? 'Em crescimento' : 'Inicial';
+  const tone = score >= 3 ? 'green' : score >= 2 ? 'violet' : 'gray';
+  return <Card className="healthCard">
+    <div className="cardHead"><h3>🟢 Saúde da loja</h3><Badge tone={tone}>{level}</Badge></div>
+    <div className="healthMeter"><i style={{width:`${Math.max(10, score * 25)}%`}} /></div>
+    <div className="healthChecks">
+      <span className={loja?.logo_url ? 'okLine' : ''}>Logo cadastrada</span>
+      <span className={customers >= 10 ? 'okLine' : ''}>10 inscritos</span>
+      <span className={campaigns > 0 ? 'okLine' : ''}>Primeira campanha</span>
+      <span className={clicks > 0 ? 'okLine' : ''}>Primeiro clique</span>
+    </div>
+    {score < 4 && <Button onClick={() => setActive(score === 0 ? 'store' : score === 1 ? 'capture' : 'camp')}>Melhorar agora</Button>}
+  </Card>;
+}
+
+function SmartAlerts({ data, loja, setActive }) {
+  const alerts = [];
+  const customers = data?.customers || [];
+  const campaigns = data?.campaigns || [];
+  const lastCampaign = campaigns[0];
+  const daysSinceCampaign = lastCampaign?.createdAt ? Math.floor((Date.now() - new Date(lastCampaign.createdAt).getTime()) / 86400000) : null;
+  if (!loja?.logo_url) alerts.push({ title:'Adicione sua logo', text:'Lojas com logo transmitem mais confiança na página pública e nas notificações.', action:'Adicionar logo', screen:'store' });
+  if (customers.length < 10) alerts.push({ title:'Capte seus primeiros inscritos', text:'Compartilhe o QR Code ou link público para chegar aos primeiros 10 clientes.', action:'Ver link público', screen:'store' });
+  if (!campaigns.length) alerts.push({ title:'Crie sua primeira campanha', text:'Use um template pronto e envie uma notificação teste antes.', action:'Criar campanha', screen:'camp' });
+  if (daysSinceCampaign !== null && daysSinceCampaign >= 7) alerts.push({ title:'Você está há alguns dias sem enviar campanhas', text:'Campanhas semanais ajudam o cliente a lembrar da sua loja.', action:'Criar campanha', screen:'camp' });
+  if (campaigns.some(c => Number(c.clicks || 0) > 0)) alerts.push({ title:'Você já tem cliques', text:'Veja quais campanhas trouxeram mais clientes de volta.', action:'Ver resultados', screen:'results' });
+  return <Card className="smartAlerts">
+    <div className="cardHead"><h3>🔔 Alertas inteligentes</h3><Badge tone="violet">{alerts.length || 1} dica</Badge></div>
+    {!alerts.length ? <p className="muted">Tudo certo por aqui. Continue enviando campanhas com frequência.</p> : <div className="alertList">
+      {alerts.slice(0,3).map(a => <button key={a.title} onClick={() => setActive(a.screen)}><b>{a.title}</b><span>{a.text}</span><em>{a.action} ›</em></button>)}
+    </div>}
+  </Card>;
+}
+
+function ResultsCenter({ data, user }) {
+  const analytics = calculateAnalytics(data, user);
+  const best = analytics.bestCampaign;
+  return <div className="resultsPage">
+    <div className="stats">
+      <Stat Icon={Users} label="Inscritos" value={analytics.subscribersUsed} change={`${analytics.subscriberPct}% do plano`} />
+      <Stat Icon={Send} label="Campanhas" value={analytics.campaignsUsed} change="criadas" color="blue" />
+      <Stat Icon={Bell} label="Envios" value={analytics.totalSent.toLocaleString('pt-BR')} change="registrados" color="orange" />
+      <Stat Icon={MousePointerClick} label="Cliques" value={analytics.totalClicks.toLocaleString('pt-BR')} change={`${analytics.ctr}% CTR`} color="green" />
+    </div>
+    <Card className="resultsHero">
+      <div>
+        <h2>Central de Resultados</h2>
+        <p>Veja em um só lugar o retorno real das notificações: quantos inscritos você tem, quantas campanhas foram enviadas e quantos clientes clicaram.</p>
+      </div>
+      <Badge tone={Number(analytics.ctr) > 0 ? 'green' : 'gray'}>{analytics.ctr}% CTR médio</Badge>
+    </Card>
+    <div className="resultsGrid">
+      <Card><h3>🏆 Melhor campanha</h3><h2>{best ? best.title : 'Sem campanha campeã ainda'}</h2><p className="muted">{best ? `${best.sent} envios • ${best.clicks} cliques • ${best.rate}` : 'Envie campanhas e acompanhe o resultado aqui.'}</p></Card>
+      <Card><h3>📈 Crescimento</h3><p><b>+{analytics.newThisWeek}</b> inscritos esta semana</p><p><b>+{analytics.newThisMonth}</b> inscritos este mês</p></Card>
+      <Card><h3>💡 Próxima ação recomendada</h3><p>{analytics.subscribersUsed < 10 ? 'Compartilhe seu QR Code para captar mais inscritos.' : analytics.totalClicks === 0 ? 'Envie uma campanha com imagem e chamada curta para gerar os primeiros cliques.' : 'Duplique sua melhor campanha e teste outro horário.'}</p></Card>
+    </div>
+  </div>;
 }
 
 const oneSignalAppId = import.meta.env.VITE_ONESIGNAL_APP_ID || '';
@@ -360,7 +443,7 @@ function Login({ setUser }) {
   </div>;
 }
 
-const sellerMenu = [ ['dash','Dashboard',BarChart3], ['camp','Campanhas',Send], ['auto','Automação',Zap], ['clients','Inscritos',Users], ['capture','Captura Push',Bell], ['segments','Segmentos',Users], ['reports','Relatórios',TrendingUp], ['store','Loja',Store], ['plans','Planos',Crown], ['support','Suporte',LifeBuoy], ['config','Configurações',Settings] ];
+const sellerMenu = [ ['dash','Dashboard',BarChart3], ['camp','Campanhas',Send], ['auto','Automação',Zap], ['clients','Inscritos',Users], ['capture','Captura Push',Bell], ['segments','Segmentos',Users], ['reports','Relatórios',TrendingUp], ['results','Resultados',TrendingUp], ['store','Loja',Store], ['plans','Planos',Crown], ['support','Suporte',LifeBuoy], ['config','Configurações',Settings] ];
 const adminMenu = [ ['dash','Dashboard Geral',BarChart3], ['vendors','Vendedores',Store], ['plans','Planos',Crown], ['global','Campanhas Globais',Send], ['support','Suporte',LifeBuoy], ['settings','Configurações',Settings] ];
 
 function Shell({ user, setUser, active, setActive, menu, children, data, onLogout }) {
@@ -451,6 +534,7 @@ function Dashboard({ data, user, setActive, loja }) {
     <div className="welcome"><div><Rocket/><h2>Bem-vindo de volta! 👋</h2><p>Veja resultados reais das suas campanhas e acompanhe o crescimento da sua loja.</p></div><Button onClick={() => setActive('camp')}><Send size={17}/> Criar campanha</Button></div>
 
     <FirstSteps loja={loja} data={data} setActive={setActive} />
+    <div className="dashboardAssistGrid"><StoreHealth loja={loja} data={data} setActive={setActive} /><SmartAlerts data={data} loja={loja} setActive={setActive} /><PWAInstallTip /></div>
 
     <div className="stats">
       <Stat Icon={Users} label="Inscritos" value={analytics.subscribersUsed} change="dados reais" />
@@ -477,7 +561,7 @@ function Dashboard({ data, user, setActive, loja }) {
 
       <div className="valueStack">
         <Card className="accountPanel">
-          <div className="cardHead"><h3>Resumo da Conta</h3><Badge>{plan.label}</Badge></div>
+          <div className="cardHead"><h3>Resumo da Conta <HelpTip title="Resumo" text="Mostra uso do plano, inscritos e campanhas do mês." /></h3><Badge>{plan.label}</Badge></div>
           <ProgressLine label="Inscritos" value={analytics.subscribersUsed} limit={analytics.planLimits.subscribers} pct={analytics.subscriberPct} />
           <ProgressLine label="Campanhas" value={analytics.campaignsUsed} limit={analytics.planLimits.campaigns} pct={analytics.campaignPct} />
           <p className="miniInfo">Status: <b>{user.status || 'ativo'}</b></p>
@@ -1290,7 +1374,7 @@ function TargetIcon(){ return <Users size={20}/>; }
 
 function Seller({ user, setUser, data, setData, loja, refreshData, onLogout }) {
   const [active,setActive]=useState('dash');
-  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={sellerMenu} data={data} onLogout={onLogout}>{active==='dash'&&<Dashboard data={data} user={user} setActive={setActive} loja={loja}/>} {active==='camp'&&<Campaigns data={data} setData={setData} lojaId={loja?.id} loja={loja} refreshData={refreshData} user={user}/>} {active==='auto'&&<Automations/>} {active==='clients'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData} user={user}/>} {active==='capture'&&<Capture loja={loja} data={data} setData={setData} refreshData={refreshData} user={user}/>} {active==='segments'&&<Segments data={data}/>} {active==='reports'&&<Reports data={data} user={user}/>} {active==='store'&&<StorePanel loja={loja} refreshData={refreshData} user={user}/>} {active==='plans'&&<Plans/>} {active==='support'&&<SupportPanel user={user} loja={loja} data={data} refreshData={refreshData}/>} {active==='config'&&<ConfigPanel user={user} setUser={setUser}/>}</Shell>;
+  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={sellerMenu} data={data} onLogout={onLogout}>{active==='dash'&&<Dashboard data={data} user={user} setActive={setActive} loja={loja}/>} {active==='camp'&&<Campaigns data={data} setData={setData} lojaId={loja?.id} loja={loja} refreshData={refreshData} user={user}/>} {active==='auto'&&<Automations/>} {active==='clients'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData} user={user}/>} {active==='capture'&&<Capture loja={loja} data={data} setData={setData} refreshData={refreshData} user={user}/>} {active==='segments'&&<Segments data={data}/>} {active==='reports'&&<Reports data={data} user={user}/>} {active==='results'&&<ResultsCenter data={data} user={user}/>} {active==='store'&&<StorePanel loja={loja} refreshData={refreshData} user={user}/>} {active==='plans'&&<Plans/>} {active==='support'&&<SupportPanel user={user} loja={loja} data={data} refreshData={refreshData}/>} {active==='config'&&<ConfigPanel user={user} setUser={setUser}/>}</Shell>;
 }
 
 function Admin({ user, setUser, data, setData, refreshData }) {
