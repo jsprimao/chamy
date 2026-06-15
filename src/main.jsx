@@ -743,27 +743,27 @@ function Campaigns({ data, setData, lojaId, loja, refreshData, user }) {
     if (saveAs !== 'rascunho' && !link) return alert('Informe a URL de destino da campanha. Ela pode ser um catálogo, site, promoção ou WhatsApp.');
     if (link && !/^https?:\/\//i.test(link)) return alert('A URL precisa começar com https:// ou http://');
     const scheduledDate = form.sendMode === 'agendar' ? new Date(form.scheduledAt) : null;
-    if (saveAs !== 'rascunho' && form.sendMode === 'agendar' && (!form.scheduledAt || Number.isNaN(scheduledDate.getTime()))) return alert('Informe a data e horário do agendamento.');
-    if (saveAs !== 'rascunho' && scheduledDate && scheduledDate.getTime() <= Date.now()) return alert('O agendamento precisa ser para uma data/hora futura.');
+    if (isBusiness && saveAs !== 'rascunho' && form.sendMode === 'agendar' && (!form.scheduledAt || Number.isNaN(scheduledDate.getTime()))) return alert('Informe a data e horário do agendamento.');
+    if (isBusiness && saveAs !== 'rascunho' && scheduledDate && scheduledDate.getTime() <= Date.now()) return alert('O agendamento precisa ser para uma data/hora futura.');
 
     setSaving(true);
     try {
       let finalImageUrl = form.imageUrl || '';
       if (imageFile) finalImageUrl = await uploadCampaignImage(imageFile, lojaId);
       const duracao = parseInt(form.duration, 10) || 1;
-      const status = saveAs === 'rascunho' ? 'Rascunho' : (form.sendMode === 'agendar' ? 'Programada' : 'Ativa');
+      const status = saveAs === 'rascunho' ? 'Rascunho' : (isBusiness && form.sendMode === 'agendar' ? 'Programada' : 'Ativa');
       const payload = {
         loja_id: lojaId,
         titulo: title,
         mensagem: msg,
         link: link || null,
         imagem_url: finalImageUrl || null,
-        publico: form.audience,
-        frequencia: form.freq,
-        duracao_dias: duracao,
+        publico: isBusiness ? form.audience : 'Todos',
+        frequencia: isBusiness ? form.freq : 'Envio único',
+        duracao_dias: isBusiness ? duracao : 1,
         status,
-        envio_modo: saveAs === 'rascunho' ? 'rascunho' : form.sendMode,
-        agendada_para: status === 'Programada' && scheduledDate ? scheduledDate.toISOString() : null
+        envio_modo: saveAs === 'rascunho' ? 'rascunho' : (isBusiness ? form.sendMode : 'agora'),
+        agendada_para: isBusiness && status === 'Programada' && scheduledDate ? scheduledDate.toISOString() : null
       };
 
       let created;
@@ -838,8 +838,9 @@ function Campaigns({ data, setData, lojaId, loja, refreshData, user }) {
   }
   function testNotify(){ if(!('Notification' in window)) return alert('Seu navegador não suporta notificações.'); Notification.requestPermission().then(p=> p==='granted' ? new Notification(form.title,{body:form.msg,icon:loja?.logo_url || '/favicon.png', image:imagePreview || form.imageUrl || undefined}) : alert('Permissão de notificação negada.')); }
   const planKey = normalizePlan(user?.plan || 'gratis');
+  const isBusiness = hasPlanAccess(planKey, 'business');
   const imageLocked = false;
-  const scheduleLocked = false;
+  const scheduleLocked = true;
   return <div className="campaignPage campaignPageV26">
     <Card className="creator">
       <div className="cardHead"><div><h3>{editing ? 'Editar campanha' : 'Nova campanha'}</h3><p className="muted">Escolha um modelo, revise a prévia e salve como rascunho antes de enviar.</p></div>{editing && <Badge tone="blue">Editando</Badge>}</div>
@@ -852,9 +853,11 @@ function Campaigns({ data, setData, lojaId, loja, refreshData, user }) {
         <div className="campaignImagePreview">{imagePreview || form.imageUrl ? <img src={imagePreview || form.imageUrl} alt="Imagem da campanha" /> : <ImageIcon size={28}/>}</div>
         <div><input type="file" accept="image/png,image/jpeg,image/webp" disabled={imageLocked} onChange={e=>selectImage(e.target.files?.[0])}/><small>Recomendado: 1200 x 628 px. O Chamy ajusta automaticamente para a proporção ideal.</small>{imageNote && <small className="successTiny">{imageNote}</small>}</div>
       </div>
-      <div className="two"><div><label>Público</label><select value={form.audience} onChange={e=>setForm({...form,audience:e.target.value})}><option>Todos</option><option>Promoções</option><option>Novidades</option><option>Clientes inativos</option><option>Quem clicou na última campanha</option></select></div><div><label>Frequência</label><select value={form.freq} onChange={e=>setForm({...form,freq:e.target.value})}><option>Envio único</option><option>A cada 4 horas</option><option>Diária</option><option>Semanal</option></select></div></div>
-      <label>Duração</label><select value={form.duration} onChange={e=>setForm({...form,duration:e.target.value})}><option>1 dia</option><option>3 dias</option><option>7 dias</option><option>Até pausar</option></select>
-      <div className="scheduleBox"><label>Modo de envio</label><div className="two"><button type="button" className={form.sendMode==='agora'?'choice active':'choice'} onClick={()=>setForm({...form,sendMode:'agora'})}><Send size={16}/> Criar para enviar agora</button><button type="button" className={form.sendMode==='agendar'?'choice active':'choice'} disabled={scheduleLocked} onClick={()=>setForm({...form,sendMode:'agendar'})}><CalendarClock size={16}/> Agendar envio</button></div>{form.sendMode==='agendar' && <><label>Data e horário do envio</label><input type="datetime-local" value={form.scheduledAt} onChange={e=>setForm({...form,scheduledAt:e.target.value})}/><p className="miniNote">O envio agendado depende da função automática do servidor.</p></>}</div>
+      {!isBusiness ? <div className="manualCampaignNotice"><b>Campanha manual</b><p>Seu plano envia campanhas para <b>todos os inscritos</b>, com <b>envio único/manual</b>. Segmentação, frequência recorrente, duração e agendamento são recursos Business.</p></div> : <>
+        <div className="two"><div><label>Público <span className="premiumTagSmall">BUSINESS</span></label><select value={form.audience} onChange={e=>setForm({...form,audience:e.target.value})}><option>Todos</option><option>Promoções</option><option>Novidades</option><option>Clientes inativos</option><option>Quem clicou na última campanha</option></select></div><div><label>Frequência <span className="premiumTagSmall">BUSINESS</span></label><select value={form.freq} onChange={e=>setForm({...form,freq:e.target.value})}><option>Envio único</option><option>A cada 4 horas</option><option>Diária</option><option>Semanal</option></select></div></div>
+        <label>Duração <span className="premiumTagSmall">BUSINESS</span></label><select value={form.duration} onChange={e=>setForm({...form,duration:e.target.value})}><option>1 dia</option><option>3 dias</option><option>7 dias</option><option>Até pausar</option></select>
+        <div className="scheduleBox"><label>Modo de envio <span className="premiumTagSmall">BUSINESS</span></label><div className="two"><button type="button" className={form.sendMode==='agora'?'choice active':'choice'} onClick={()=>setForm({...form,sendMode:'agora'})}><Send size={16}/> Criar para enviar agora</button><button type="button" className={form.sendMode==='agendar'?'choice active':'choice'} disabled={scheduleLocked} onClick={()=>alert('Agendamento automático está em preparação. No momento, use envio manual.') }><CalendarClock size={16}/> Agendar envio</button></div>{form.sendMode==='agendar' && <><label>Data e horário do envio</label><input type="datetime-local" value={form.scheduledAt} onChange={e=>setForm({...form,scheduledAt:e.target.value})}/><p className="miniNote">O envio agendado está em preparação para ativação segura no servidor.</p></>}</div>
+      </>}
       <div className="two"><Button onClick={()=>saveCampaign('rascunho')} disabled={saving}><Copy size={17}/> {saving ? 'Salvando...' : 'Salvar rascunho'}</Button><Button className="primary" onClick={()=>saveCampaign('ativa')} disabled={saving}><Play size={17}/> {saving ? 'Salvando...' : form.sendMode==='agendar' ? 'Agendar campanha' : editing ? 'Salvar alterações' : 'Salvar campanha'}</Button></div>
       <div className="two"><Button onClick={testNotify}><Bell size={17}/> Enviar teste para mim</Button><Button onClick={resetForm}>Limpar</Button></div>
     </Card>

@@ -120,3 +120,8 @@
 .premiumBullets span { border-radius: 999px; background: #f8fafc; border: 1px solid #e2e8f0; padding: 8px 12px; font-size: 13px; color: #334155; font-weight: 700; }
 .inlineActions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
 @media(max-width:760px){.inlineActions{justify-content:flex-start;width:100%}}
+
+.manualCampaignNotice{border:1px solid rgba(99,102,241,.18);background:linear-gradient(135deg,rgba(99,102,241,.08),rgba(249,115,22,.07));border-radius:18px;padding:14px;margin:12px 0;color:#27304f}
+.manualCampaignNotice b{display:block;margin-bottom:4px;color:#111827}
+.manualCampaignNotice p{margin:0;font-size:13px;line-height:1.45;color:#64748b}
+.premiumTagSmall{font-size:10px;font-weight:800;letter-spacing:.04em;background:#fff7ed;color:#c2410c;border:1px solid #fed7aa;border-radius:999px;padding:2px 7px;margin-left:6px;vertical-align:middle}
