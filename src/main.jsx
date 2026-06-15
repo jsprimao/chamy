@@ -18,6 +18,12 @@ function Badge({ children, tone = 'violet' }) { return <span className={`badge $
 function Logo({ compact = false }) { return <div className={compact ? 'brand compact' : 'brand'}><img src="/logo-chamy.png" alt="Chamy" /></div>; }
 function normalizePlan(plan = 'gratis') { return String(plan).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
 function nicePlan(plan = 'gratis') { return plans[normalizePlan(plan)]?.label || plan || 'Grátis'; }
+function planLevel(plan = 'gratis') { return { gratis: 0, pro: 1, business: 2 }[normalizePlan(plan)] ?? 0; }
+function hasPlanAccess(userPlan = 'gratis', required = 'gratis') { return planLevel(userPlan) >= planLevel(required); }
+const premiumMenuMeta = {
+  auto: { label: 'BUSINESS', required: 'business', icon: '👑' },
+  segments: { label: 'BUSINESS', required: 'business', icon: '👑' }
+};
 function slugify(text = '') { return String(text || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'') || 'loja'; }
 function isUuid(value = '') { return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim()); }
 
@@ -450,7 +456,11 @@ function Shell({ user, setUser, active, setActive, menu, children, data, onLogou
   return <div className="app">
     <aside className="sidebar">
       <Logo />
-      <nav>{menu.map(([id, label, Icon]) => <button key={id} onClick={() => setActive(id)} className={active === id ? 'active' : ''}><Icon size={19}/><span>{label}</span><b>›</b></button>)}</nav>
+      <nav>{menu.map(([id, label, Icon]) => {
+        const premium = user?.role !== 'admin' ? premiumMenuMeta[id] : null;
+        const locked = premium && !hasPlanAccess(user?.plan || 'gratis', premium.required);
+        return <button key={id} onClick={() => setActive(id)} className={`${active === id ? 'active' : ''} ${locked ? 'lockedMenu' : ''}`}><Icon size={19}/><span>{label}</span>{premium && <em className={locked ? 'menuBadge locked' : 'menuBadge'}>{premium.icon} {premium.label}</em>}<b>›</b></button>;
+      })}</nav>
       <SidebarValueCard user={user} data={data} setActive={setActive} />
       <button className="logout" onClick={async () => { if (onLogout) { onLogout(); return; } if (supabase) await supabase.auth.signOut(); setUser(null); }}><LogOut size={17}/> {onLogout ? 'Voltar ao admin' : 'Sair'}</button>
     </aside>
@@ -877,7 +887,31 @@ function Customers({ data, setData, lojaId, refreshData, user }) {
   return <Card><div className="cardHead"><h3>Clientes inscritos</h3><Button className="primary" onClick={add}><Plus size={17}/> Adicionar</Button></div><div className="search"><Search/><input placeholder="Buscar por nome, cidade, interesse..." value={q} onChange={e=>setQ(e.target.value)}/></div><Table rows={rows} cols={['name','city','whats','interest','device','last','status']}/></Card>;
 }
 
-function Automations(){return <div className="autoGrid">{[['Cliente sumido','Envia aviso para quem não acessa há 7 dias.'],['Novidades da semana','Toda sexta-feira às 09h.'],['Carrinho abandonado','Lembra o cliente de finalizar o pedido.'],['Boas-vindas','Mensagem logo após aceitar notificações.']].map((a,i)=><Card key={a[0]}><Zap className="bigIcon"/><div className="cardHead"><h3>{a[0]}</h3><Badge tone={i===2?'gray':'green'}>{i===2?'Inativa':'Ativa'}</Badge></div><p>{a[1]}</p><Button>{i===2?<Play size={17}/>:<Pause size={17}/>} {i===2?'Ativar':'Pausar'}</Button></Card>)}</div>}
+function PremiumFeatureLock({ title='Recurso premium', required='business', icon='👑', children, setActive }) {
+  return <div className="premiumLockWrap">
+    <Card className="premiumLock">
+      <div className="premiumCrown">{icon}</div>
+      <Badge tone="violet">Plano {nicePlan(required)}</Badge>
+      <h2>{title}</h2>
+      <p>{children}</p>
+      <div className="premiumBullets">
+        <span>✓ Mais automação</span>
+        <span>✓ Menos trabalho manual</span>
+        <span>✓ Mais retorno dos clientes</span>
+      </div>
+      <Button className="primary" onClick={() => setActive?.('plans')}><Crown size={17}/> Conhecer planos</Button>
+    </Card>
+  </div>;
+}
+
+function Automations({ user, setActive }){
+  if (!hasPlanAccess(user?.plan || 'gratis', 'business')) {
+    return <PremiumFeatureLock title="Automações inteligentes" required="business" setActive={setActive}>
+      Crie campanhas que trabalham sozinhas, como novidades toda sexta-feira, reativação de clientes inativos e mensagens automáticas de boas-vindas. Este recurso é exclusivo do plano Business.
+    </PremiumFeatureLock>;
+  }
+  return <div className="autoGrid">{[['Cliente sumido','Envia aviso para quem não acessa há 7 dias.'],['Novidades da semana','Toda sexta-feira às 09h.'],['Carrinho abandonado','Lembra o cliente de finalizar o pedido.'],['Boas-vindas','Mensagem logo após aceitar notificações.']].map((a,i)=><Card key={a[0]}><Zap className="bigIcon"/><div className="cardHead"><h3>{a[0]}</h3><Badge tone={i===2?'gray':'green'}>{i===2?'Em breve':'Ativa'}</Badge></div><p>{a[1]}</p><Button>{i===2?<Play size={17}/>:<Pause size={17}/>} {i===2?'Ativar':'Pausar'}</Button></Card>)}</div>}
+
 function Capture({ loja, data, setData, refreshData, user }){
   const [status, setStatus] = useState(isOneSignalConfigured() ? 'Pronto para ativar no navegador.' : 'Configure VITE_ONESIGNAL_APP_ID na Vercel.');
   const [loading, setLoading] = useState(false);
@@ -1374,7 +1408,7 @@ function TargetIcon(){ return <Users size={20}/>; }
 
 function Seller({ user, setUser, data, setData, loja, refreshData, onLogout }) {
   const [active,setActive]=useState('dash');
-  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={sellerMenu} data={data} onLogout={onLogout}>{active==='dash'&&<Dashboard data={data} user={user} setActive={setActive} loja={loja}/>} {active==='camp'&&<Campaigns data={data} setData={setData} lojaId={loja?.id} loja={loja} refreshData={refreshData} user={user}/>} {active==='auto'&&<Automations/>} {active==='clients'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData} user={user}/>} {active==='capture'&&<Capture loja={loja} data={data} setData={setData} refreshData={refreshData} user={user}/>} {active==='segments'&&<Segments data={data}/>} {active==='reports'&&<Reports data={data} user={user}/>} {active==='results'&&<ResultsCenter data={data} user={user}/>} {active==='store'&&<StorePanel loja={loja} refreshData={refreshData} user={user}/>} {active==='plans'&&<Plans/>} {active==='support'&&<SupportPanel user={user} loja={loja} data={data} refreshData={refreshData}/>} {active==='config'&&<ConfigPanel user={user} setUser={setUser}/>}</Shell>;
+  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={sellerMenu} data={data} onLogout={onLogout}>{active==='dash'&&<Dashboard data={data} user={user} setActive={setActive} loja={loja}/>} {active==='camp'&&<Campaigns data={data} setData={setData} lojaId={loja?.id} loja={loja} refreshData={refreshData} user={user}/>} {active==='auto'&&<Automations user={user} setActive={setActive}/>} {active==='clients'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData} user={user}/>} {active==='capture'&&<Capture loja={loja} data={data} setData={setData} refreshData={refreshData} user={user}/>} {active==='segments'&&(hasPlanAccess(user?.plan || 'gratis','business') ? <Segments data={data}/> : <PremiumFeatureLock title="Segmentação avançada" required="business" setActive={setActive}>Organize inscritos por interesse e envie campanhas mais certeiras para grupos específicos. Este recurso é exclusivo do plano Business.</PremiumFeatureLock>)} {active==='reports'&&<Reports data={data} user={user}/>} {active==='results'&&<ResultsCenter data={data} user={user}/>} {active==='store'&&<StorePanel loja={loja} refreshData={refreshData} user={user}/>} {active==='plans'&&<Plans/>} {active==='support'&&<SupportPanel user={user} loja={loja} data={data} refreshData={refreshData}/>} {active==='config'&&<ConfigPanel user={user} setUser={setUser}/>}</Shell>;
 }
 
 function Admin({ user, setUser, data, setData, refreshData }) {
