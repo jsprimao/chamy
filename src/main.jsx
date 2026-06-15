@@ -36,6 +36,20 @@ function getPublicStoreParam() {
   if (parts[0] !== 'loja') return '';
   return decodeURIComponent(parts[1] || '').trim();
 }
+
+function buildWhatsAppLink(rawPhone = '') {
+  const phone = String(rawPhone || '').replace(/\D/g, '');
+  if (!phone) return '';
+  const withCountry = phone.length <= 11 ? `55${phone}` : phone;
+  return `https://wa.me/${withCountry}`;
+}
+function getStoreDestination(loja = {}) {
+  const site = String(loja.site || '').trim();
+  if (site && /^https?:\/\//i.test(site)) return site;
+  if (site) return `https://${site}`;
+  return buildWhatsAppLink(loja.whatsapp || '');
+}
+
 function withTimeout(promise, ms, message) {
   let timer;
   const timeout = new Promise((_, reject) => {
@@ -1232,10 +1246,17 @@ function PublicCapture(){
       <div className="publicStoreBrand">
         {loja.logo_url ? <img src={loja.logo_url} alt={loja.nome} /> : <Logo />}
       </div>
-      <Badge tone="green">Inscrição gratuita</Badge>
-      <h1>Receba promoções e novidades da {loja.nome}</h1>
-      <p className="publicLead">Digite apenas seu nome e permita as notificações. Assim você recebe ofertas, lançamentos e avisos importantes direto no celular ou computador.</p>
-      {done ? <div className="successBox"><CheckCircle2 size={42}/><h2>🎉 Pronto!</h2><p>Agora você receberá promoções, novidades e ofertas exclusivas da {loja.nome}. Você pode cancelar quando quiser nas configurações do navegador.</p><div className="two"><Button className="primary" onClick={()=>{ const destino = loja.site || (loja.whatsapp ? `https://wa.me/${String(loja.whatsapp).replace(/\D/g,'')}` : '/'); window.open(destino, '_blank'); }}>Conhecer a loja</Button><Button onClick={()=>setDone(false)}>Atualizar cadastro</Button></div><PWAInstallTip compact /></div> : <form onSubmit={activatePublicPush} className="publicForm simpleCapture">
+      <Badge tone="green">Cadastro gratuito e seguro</Badge>
+      <div className="publicPromoBanner">
+        <div className="promoIcon"><Gift size={22}/></div>
+        <div>
+          <b>Receba ofertas exclusivas da {loja.nome}</b>
+          <p>Promoções, lançamentos e novidades direto no seu celular. Sem grupos, sem spam e você pode cancelar quando quiser.</p>
+        </div>
+      </div>
+      <h1>Quer ser avisado quando chegar promoção?</h1>
+      <p className="publicLead">Digite seu nome, permita as notificações e acompanhe as melhores oportunidades da {loja.nome}. Depois, toque em <b>Conhecer a loja</b> para acessar o site, catálogo ou WhatsApp do vendedor.</p>
+      {done ? <div className="successBox"><CheckCircle2 size={42}/><h2>🎉 Tudo certo!</h2><p>Agora você faz parte da lista exclusiva da {loja.nome} e receberá promoções, lançamentos e ofertas especiais diretamente no seu celular.</p><p className="successHint">Aproveite para conhecer a loja agora.</p><div className="two"><Button className="primary" onClick={()=>{ const destino = getStoreDestination(loja); if (destino) window.location.href = destino; else setStatus('Esta loja ainda não cadastrou site, catálogo ou WhatsApp.'); }}>Conhecer a loja</Button><Button onClick={()=>setDone(false)}>Atualizar cadastro</Button></div>{status && <p className="authMessage">{status}</p>}<PWAInstallTip compact /></div> : <form onSubmit={activatePublicPush} className="publicForm simpleCapture">
         <label>Seu nome</label><input value={form.nome} onChange={e=>setForm({...form,nome:e.target.value})} placeholder="Ex: Maria Silva" />
         <button type="button" className="moreFields" onClick={()=>setShowMore(!showMore)}>{showMore ? 'Ocultar dados opcionais' : '+ Quero informar mais dados'}</button>
         {showMore && <div className="advancedFields"><label>WhatsApp opcional</label><input value={form.whatsapp} onChange={e=>setForm({...form,whatsapp:e.target.value})} placeholder="(12) 99999-9999" />

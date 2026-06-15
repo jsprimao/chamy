@@ -125,3 +125,10 @@
 .manualCampaignNotice b{display:block;margin-bottom:4px;color:#111827}
 .manualCampaignNotice p{margin:0;font-size:13px;line-height:1.45;color:#64748b}
 .premiumTagSmall{font-size:10px;font-weight:800;letter-spacing:.04em;background:#fff7ed;color:#c2410c;border:1px solid #fed7aa;border-radius:999px;padding:2px 7px;margin-left:6px;vertical-align:middle}
+/* v32 - Captura pública mais persuasiva e destino para loja do vendedor */
+.publicPromoBanner{display:flex;gap:12px;align-items:flex-start;background:linear-gradient(135deg,#fff7ed,#f5f3ff);border:1px solid #fed7aa;border-radius:20px;padding:14px 16px;margin:10px 0 18px;text-align:left;box-shadow:0 12px 30px rgba(124,58,237,.08)}
+.publicPromoBanner .promoIcon{width:42px;height:42px;border-radius:16px;display:grid;place-items:center;background:linear-gradient(135deg,#7c3aed,#f97316);color:#fff;flex-shrink:0}
+.publicPromoBanner b{display:block;color:#111827;font-size:16px;margin-bottom:4px}
+.publicPromoBanner p{margin:0;color:#475569;line-height:1.45;font-size:14px}
+.successHint{font-weight:900;color:#047857!important;margin-top:8px!important}
+@media(max-width:760px){.publicPromoBanner{padding:13px}.publicPromoBanner b{font-size:15px}.publicPromoBanner p{font-size:13px}}
