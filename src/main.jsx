@@ -5,8 +5,8 @@ import './styles.css';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 
 const plans = {
-  gratis: { label: 'Grátis', price: 'R$0', limit: 100, badge: 'Teste', features: ['Até 100 inscritos', '20 campanhas/mês', '1 loja', 'Link público', 'Marca Chamy'] },
-  pro: { label: 'Pro', price: 'R$39', limit: 1000, badge: 'Mais indicado', features: ['Até 1.000 inscritos', 'Campanhas ilimitadas', 'QR Code da loja', 'Agendamento', 'Sem marca Chamy'] },
+  gratis: { label: 'Grátis', price: 'R$0', limit: 100, badge: 'Teste completo', features: ['Até 100 inscritos', '20 campanhas/mês', 'Logo, QR Code e link público', 'Templates e prévia da campanha', 'Imagem nas notificações'] },
+  pro: { label: 'Pro', price: 'R$39', limit: 1000, badge: 'Mais indicado', features: ['Até 1.000 inscritos', 'Campanhas ilimitadas', 'Todos os recursos principais', 'Mais liberdade para crescer', 'Ideal para lojas em expansão'] },
   business: { label: 'Business', price: 'R$149', limit: 10000, badge: 'Empresarial', features: ['Até 10.000 inscritos', 'Automações', 'Segmentação avançada', 'Múltiplos usuários', 'Suporte prioritário'] }
 };
 
@@ -838,8 +838,8 @@ function Campaigns({ data, setData, lojaId, loja, refreshData, user }) {
   }
   function testNotify(){ if(!('Notification' in window)) return alert('Seu navegador não suporta notificações.'); Notification.requestPermission().then(p=> p==='granted' ? new Notification(form.title,{body:form.msg,icon:loja?.logo_url || '/favicon.png', image:imagePreview || form.imageUrl || undefined}) : alert('Permissão de notificação negada.')); }
   const planKey = normalizePlan(user?.plan || 'gratis');
-  const imageLocked = planKey === 'gratis';
-  const scheduleLocked = planKey === 'gratis';
+  const imageLocked = false;
+  const scheduleLocked = false;
   return <div className="campaignPage campaignPageV26">
     <Card className="creator">
       <div className="cardHead"><div><h3>{editing ? 'Editar campanha' : 'Nova campanha'}</h3><p className="muted">Escolha um modelo, revise a prévia e salve como rascunho antes de enviar.</p></div>{editing && <Badge tone="blue">Editando</Badge>}</div>
@@ -847,14 +847,14 @@ function Campaigns({ data, setData, lojaId, loja, refreshData, user }) {
       <label>Título</label><input value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
       <label>Mensagem</label><textarea value={form.msg} onChange={e=>setForm({...form,msg:e.target.value})}/>
       <label>URL de destino da campanha</label><input value={form.link} onChange={e=>setForm({...form,link:e.target.value})} placeholder="https://catalogo.com.br/promocao ou https://wa.me/55..."/><p className="miniNote">Obrigatória para enviar. Em rascunhos, você pode preencher depois.</p>
-      <label>Imagem da campanha {imageLocked && <b className="required">Pro</b>}</label>
+      <label>Imagem da campanha</label>
       <div className="imageCampaignBox">
         <div className="campaignImagePreview">{imagePreview || form.imageUrl ? <img src={imagePreview || form.imageUrl} alt="Imagem da campanha" /> : <ImageIcon size={28}/>}</div>
-        <div><input type="file" accept="image/png,image/jpeg,image/webp" disabled={imageLocked} onChange={e=>selectImage(e.target.files?.[0])}/><small>{imageLocked ? 'Disponível nos planos Pro e Business.' : 'Recomendado: 1200 x 628 px. O Chamy ajusta automaticamente para a proporção ideal.'}</small>{imageNote && <small className="successTiny">{imageNote}</small>}</div>
+        <div><input type="file" accept="image/png,image/jpeg,image/webp" disabled={imageLocked} onChange={e=>selectImage(e.target.files?.[0])}/><small>Recomendado: 1200 x 628 px. O Chamy ajusta automaticamente para a proporção ideal.</small>{imageNote && <small className="successTiny">{imageNote}</small>}</div>
       </div>
       <div className="two"><div><label>Público</label><select value={form.audience} onChange={e=>setForm({...form,audience:e.target.value})}><option>Todos</option><option>Promoções</option><option>Novidades</option><option>Clientes inativos</option><option>Quem clicou na última campanha</option></select></div><div><label>Frequência</label><select value={form.freq} onChange={e=>setForm({...form,freq:e.target.value})}><option>Envio único</option><option>A cada 4 horas</option><option>Diária</option><option>Semanal</option></select></div></div>
       <label>Duração</label><select value={form.duration} onChange={e=>setForm({...form,duration:e.target.value})}><option>1 dia</option><option>3 dias</option><option>7 dias</option><option>Até pausar</option></select>
-      <div className="scheduleBox"><label>Modo de envio {scheduleLocked && <b className="required">Pro</b>}</label><div className="two"><button type="button" className={form.sendMode==='agora'?'choice active':'choice'} onClick={()=>setForm({...form,sendMode:'agora'})}><Send size={16}/> Criar para enviar agora</button><button type="button" className={form.sendMode==='agendar'?'choice active':'choice'} disabled={scheduleLocked} onClick={()=>setForm({...form,sendMode:'agendar'})}><CalendarClock size={16}/> Agendar envio</button></div>{form.sendMode==='agendar' && <><label>Data e horário do envio</label><input type="datetime-local" value={form.scheduledAt} onChange={e=>setForm({...form,scheduledAt:e.target.value})}/><p className="miniNote">O envio agendado depende da função automática do servidor.</p></>}</div>
+      <div className="scheduleBox"><label>Modo de envio</label><div className="two"><button type="button" className={form.sendMode==='agora'?'choice active':'choice'} onClick={()=>setForm({...form,sendMode:'agora'})}><Send size={16}/> Criar para enviar agora</button><button type="button" className={form.sendMode==='agendar'?'choice active':'choice'} disabled={scheduleLocked} onClick={()=>setForm({...form,sendMode:'agendar'})}><CalendarClock size={16}/> Agendar envio</button></div>{form.sendMode==='agendar' && <><label>Data e horário do envio</label><input type="datetime-local" value={form.scheduledAt} onChange={e=>setForm({...form,scheduledAt:e.target.value})}/><p className="miniNote">O envio agendado depende da função automática do servidor.</p></>}</div>
       <div className="two"><Button onClick={()=>saveCampaign('rascunho')} disabled={saving}><Copy size={17}/> {saving ? 'Salvando...' : 'Salvar rascunho'}</Button><Button className="primary" onClick={()=>saveCampaign('ativa')} disabled={saving}><Play size={17}/> {saving ? 'Salvando...' : form.sendMode==='agendar' ? 'Agendar campanha' : editing ? 'Salvar alterações' : 'Salvar campanha'}</Button></div>
       <div className="two"><Button onClick={testNotify}><Bell size={17}/> Enviar teste para mim</Button><Button onClick={resetForm}>Limpar</Button></div>
     </Card>
@@ -876,15 +876,15 @@ function Customers({ data, setData, lojaId, refreshData, user }) {
     if ((data?.customers?.length || 0) >= planLimits.subscribers) {
       return alert(`Você atingiu o limite de ${planLimits.subscribers.toLocaleString('pt-BR')} inscritos do plano ${planLimits.label}. Faça upgrade para captar mais clientes.`);
     }
-    const name=prompt('Nome do cliente/inscrito:'); if(!name) return;
-    const whats=prompt('WhatsApp do cliente:') || '';
+    const name=prompt('Nome do contato manual (ele só receberá push após aceitar pelo link/QR):'); if(!name) return;
+    const whats=prompt('WhatsApp para convite manual (opcional):') || '';
     const city=prompt('Cidade/UF:') || '';
     const { data: created, error } = await supabase.from('clientes').insert({ loja_id: lojaId, nome:name, whatsapp:whats, cidade:city, interesse:'Todos', aceitou_push:false, status:'ativo' }).select('*').single();
     if (error) return alert(error.message);
     setData({...data,customers:[{id:created.id,name:created.nome,city:created.cidade || '',whats:created.whatsapp || '',interest:created.interesse || 'Todos',status:created.status || 'ativo',last:'Agora',device:created.aceitou_push ? 'Push ativo':'Sem push'},...data.customers]});
     refreshData?.();
   }
-  return <Card><div className="cardHead"><h3>Clientes inscritos</h3><Button className="primary" onClick={add}><Plus size={17}/> Adicionar</Button></div><div className="search"><Search/><input placeholder="Buscar por nome, cidade, interesse..." value={q} onChange={e=>setQ(e.target.value)}/></div><Table rows={rows} cols={['name','city','whats','interest','device','last','status']}/></Card>;
+  return <Card><div className="cardHead"><div><h3>Inscritos e contatos</h3><p className="muted">Só recebe notificações quem aceitar pelo link público ou QR Code. Contatos manuais servem apenas para controle ou convite por WhatsApp.</p></div><div className="inlineActions"><Button className="primary" onClick={()=>{const url=`${window.location.origin}/loja/${lojaId || ''}`; navigator.clipboard?.writeText(url); alert('Link público copiado. Envie este link para o cliente se cadastrar e aceitar notificações.')}}><Copy size={17}/> Copiar link</Button><Button onClick={add}><Plus size={17}/> Contato manual</Button></div></div><div className="search"><Search/><input placeholder="Buscar por nome, cidade, interesse..." value={q} onChange={e=>setQ(e.target.value)}/></div><Table rows={rows} cols={['name','city','whats','interest','device','last','status']}/></Card>;
 }
 
 function PremiumFeatureLock({ title='Recurso premium', required='business', icon='👑', children, setActive }) {
@@ -1331,7 +1331,7 @@ function StorePanel({ loja, refreshData, user }){
       <label>Link público da loja</label><div className="copyBox"><code>{publicLink}</code><Button onClick={()=>navigator.clipboard?.writeText(publicLink)}><Copy size={16}/> Copiar</Button></div><p className="miniNote">Este é o link estável da captura pública. Ele usa o ID da loja para evitar erro quando o nome da loja muda.</p>
       <label>Código do widget</label><pre>{widgetCode}</pre>
       <Button onClick={()=>navigator.clipboard?.writeText(widgetCode)}><Copy size={16}/> Copiar widget</Button>
-      {normalizePlan(user?.plan || 'gratis') === 'gratis' ? <div className="qrLocked"><QrCode/><b>QR Code da loja</b><span>Disponível nos planos Pro e Business. Use para captar inscritos em balcão, embalagens, cartões e eventos.</span><Button onClick={()=>alert('Upgrade para Pro liberará QR Code e agendamento.')}>Liberar QR Code</Button></div> : <div className="qrBox"><div><QrCode/><b>QR Code da loja</b><span>Use em balcão, embalagem, cartão, evento ou grupos de WhatsApp para captar inscritos rapidamente.</span></div><img src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(publicLink)}`} alt="QR Code da loja"/><div className="two"><Button onClick={()=>window.open(publicLink, '_blank')}><ExternalLink size={16}/> Abrir página</Button><Button onClick={()=>{const a=document.createElement('a');a.href=`https://api.qrserver.com/v1/create-qr-code/?size=800x800&data=${encodeURIComponent(publicLink)}`;a.download='qrcode-chamy.png';a.click();}}><QrCode size={16}/> Baixar QR</Button></div></div>}<PWAInstallTip />
+      <div className="qrBox"><div><QrCode/><b>QR Code da loja</b><span>Use em balcão, embalagem, cartão, evento ou grupos de WhatsApp para captar inscritos rapidamente.</span></div><img src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(publicLink)}`} alt="QR Code da loja"/><div className="two"><Button onClick={()=>window.open(publicLink, '_blank')}><ExternalLink size={16}/> Abrir página</Button><Button onClick={()=>{const a=document.createElement('a');a.href=`https://api.qrserver.com/v1/create-qr-code/?size=800x800&data=${encodeURIComponent(publicLink)}`;a.download='qrcode-chamy.png';a.click();}}><QrCode size={16}/> Baixar QR</Button></div></div><PWAInstallTip />
     </Card>
   </div>;
 }
