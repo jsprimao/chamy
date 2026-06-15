@@ -5,9 +5,9 @@ import './styles.css';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 
 const plans = {
-  gratis: { label: 'Grátis', price: 'R$0', limit: 100, badge: 'Teste completo', features: ['Até 100 inscritos', '20 campanhas/mês', 'Logo, QR Code e link público', 'Templates e prévia da campanha', 'Imagem nas notificações'] },
-  pro: { label: 'Pro', price: 'R$39', limit: 1000, badge: 'Mais indicado', features: ['Até 1.000 inscritos', 'Campanhas ilimitadas', 'Todos os recursos principais', 'Mais liberdade para crescer', 'Ideal para lojas em expansão'] },
-  business: { label: 'Business', price: 'R$149', limit: 10000, badge: 'Empresarial', features: ['Até 10.000 inscritos', 'Automações', 'Segmentação avançada', 'Múltiplos usuários', 'Suporte prioritário'] }
+  gratis: { label: 'Grátis', price: 'R$0', limit: 100, badge: 'Teste completo', features: ['Até 100 inscritos', '20 campanhas/mês', 'Campanhas com imagem', 'QR Code, link público e widget', 'Templates, prévia e relatórios'] },
+  pro: { label: 'Pro', price: 'R$39', limit: 1000, badge: 'Mais indicado', features: ['Até 1.000 inscritos', 'Campanhas ilimitadas', 'Todos os recursos principais liberados', 'Mais liberdade para crescer', 'Ideal para lojas em expansão'] },
+  business: { label: 'Business', price: 'R$149', limit: 10000, badge: 'Empresarial', features: ['Até 10.000 inscritos', 'Base para recursos avançados', 'Segmentação e automações em preparação', 'Múltiplas lojas futuramente', 'Suporte prioritário'] }
 };
 
 const emptyData = { vendors: [], customers: [], campaigns: [], tickets: [] };
@@ -449,8 +449,8 @@ function Login({ setUser }) {
   </div>;
 }
 
-const sellerMenu = [ ['dash','Dashboard',BarChart3], ['camp','Campanhas',Send], ['auto','Automação',Zap], ['clients','Inscritos',Users], ['capture','Captura Push',Bell], ['segments','Segmentos',Users], ['reports','Relatórios',TrendingUp], ['results','Resultados',TrendingUp], ['store','Loja',Store], ['plans','Planos',Crown], ['support','Suporte',LifeBuoy], ['config','Configurações',Settings] ];
-const adminMenu = [ ['dash','Dashboard Geral',BarChart3], ['vendors','Vendedores',Store], ['plans','Planos',Crown], ['global','Campanhas Globais',Send], ['support','Suporte',LifeBuoy], ['settings','Configurações',Settings] ];
+const sellerMenu = [ ['dash','Dashboard',BarChart3], ['camp','Campanhas',Send], ['clients','Inscritos',Users], ['store','Loja',Store], ['results','Resultados',TrendingUp], ['plans','Planos',Crown], ['support','Suporte',LifeBuoy], ['config','Configurações',Settings] ];
+const adminMenu = [ ['dash','Dashboard Geral',BarChart3], ['vendors','Vendedores',Store], ['plans','Planos',Crown], ['support','Suporte',LifeBuoy], ['settings','Configurações',Settings] ];
 
 function Shell({ user, setUser, active, setActive, menu, children, data, onLogout }) {
   return <div className="app">
@@ -742,28 +742,23 @@ function Campaigns({ data, setData, lojaId, loja, refreshData, user }) {
     if (!msg) return alert('Informe a mensagem da campanha.');
     if (saveAs !== 'rascunho' && !link) return alert('Informe a URL de destino da campanha. Ela pode ser um catálogo, site, promoção ou WhatsApp.');
     if (link && !/^https?:\/\//i.test(link)) return alert('A URL precisa começar com https:// ou http://');
-    const scheduledDate = form.sendMode === 'agendar' ? new Date(form.scheduledAt) : null;
-    if (isBusiness && saveAs !== 'rascunho' && form.sendMode === 'agendar' && (!form.scheduledAt || Number.isNaN(scheduledDate.getTime()))) return alert('Informe a data e horário do agendamento.');
-    if (isBusiness && saveAs !== 'rascunho' && scheduledDate && scheduledDate.getTime() <= Date.now()) return alert('O agendamento precisa ser para uma data/hora futura.');
-
     setSaving(true);
     try {
       let finalImageUrl = form.imageUrl || '';
       if (imageFile) finalImageUrl = await uploadCampaignImage(imageFile, lojaId);
-      const duracao = parseInt(form.duration, 10) || 1;
-      const status = saveAs === 'rascunho' ? 'Rascunho' : (isBusiness && form.sendMode === 'agendar' ? 'Programada' : 'Ativa');
+      const status = saveAs === 'rascunho' ? 'Rascunho' : 'Ativa';
       const payload = {
         loja_id: lojaId,
         titulo: title,
         mensagem: msg,
         link: link || null,
         imagem_url: finalImageUrl || null,
-        publico: isBusiness ? form.audience : 'Todos',
-        frequencia: isBusiness ? form.freq : 'Envio único',
-        duracao_dias: isBusiness ? duracao : 1,
+        publico: 'Todos',
+        frequencia: 'Envio único',
+        duracao_dias: 1,
         status,
-        envio_modo: saveAs === 'rascunho' ? 'rascunho' : (isBusiness ? form.sendMode : 'agora'),
-        agendada_para: isBusiness && status === 'Programada' && scheduledDate ? scheduledDate.toISOString() : null
+        envio_modo: saveAs === 'rascunho' ? 'rascunho' : 'agora',
+        agendada_para: null
       };
 
       let created;
@@ -791,7 +786,7 @@ function Campaigns({ data, setData, lojaId, loja, refreshData, user }) {
       }
       resetForm();
       refreshData?.();
-      alert(editing ? 'Campanha atualizada com sucesso.' : status === 'Rascunho' ? 'Rascunho salvo com sucesso.' : status === 'Programada' ? 'Campanha agendada com sucesso.' : 'Campanha criada com sucesso. Você pode enviar agora na lista de campanhas.');
+      alert(editing ? 'Campanha atualizada com sucesso.' : status === 'Rascunho' ? 'Rascunho salvo com sucesso.' : 'Campanha criada com sucesso. Você pode enviar agora na lista de campanhas.');
     } catch (error) {
       alert(error.message || 'Falha ao salvar campanha.');
     } finally {
@@ -853,12 +848,8 @@ function Campaigns({ data, setData, lojaId, loja, refreshData, user }) {
         <div className="campaignImagePreview">{imagePreview || form.imageUrl ? <img src={imagePreview || form.imageUrl} alt="Imagem da campanha" /> : <ImageIcon size={28}/>}</div>
         <div><input type="file" accept="image/png,image/jpeg,image/webp" disabled={imageLocked} onChange={e=>selectImage(e.target.files?.[0])}/><small>Recomendado: 1200 x 628 px. O Chamy ajusta automaticamente para a proporção ideal.</small>{imageNote && <small className="successTiny">{imageNote}</small>}</div>
       </div>
-      {!isBusiness ? <div className="manualCampaignNotice"><b>Campanha manual</b><p>Seu plano envia campanhas para <b>todos os inscritos</b>, com <b>envio único/manual</b>. Segmentação, frequência recorrente, duração e agendamento são recursos Business.</p></div> : <>
-        <div className="two"><div><label>Público <span className="premiumTagSmall">BUSINESS</span></label><select value={form.audience} onChange={e=>setForm({...form,audience:e.target.value})}><option>Todos</option><option>Promoções</option><option>Novidades</option><option>Clientes inativos</option><option>Quem clicou na última campanha</option></select></div><div><label>Frequência <span className="premiumTagSmall">BUSINESS</span></label><select value={form.freq} onChange={e=>setForm({...form,freq:e.target.value})}><option>Envio único</option><option>A cada 4 horas</option><option>Diária</option><option>Semanal</option></select></div></div>
-        <label>Duração <span className="premiumTagSmall">BUSINESS</span></label><select value={form.duration} onChange={e=>setForm({...form,duration:e.target.value})}><option>1 dia</option><option>3 dias</option><option>7 dias</option><option>Até pausar</option></select>
-        <div className="scheduleBox"><label>Modo de envio <span className="premiumTagSmall">BUSINESS</span></label><div className="two"><button type="button" className={form.sendMode==='agora'?'choice active':'choice'} onClick={()=>setForm({...form,sendMode:'agora'})}><Send size={16}/> Criar para enviar agora</button><button type="button" className={form.sendMode==='agendar'?'choice active':'choice'} disabled={scheduleLocked} onClick={()=>alert('Agendamento automático está em preparação. No momento, use envio manual.') }><CalendarClock size={16}/> Agendar envio</button></div>{form.sendMode==='agendar' && <><label>Data e horário do envio</label><input type="datetime-local" value={form.scheduledAt} onChange={e=>setForm({...form,scheduledAt:e.target.value})}/><p className="miniNote">O envio agendado está em preparação para ativação segura no servidor.</p></>}</div>
-      </>}
-      <div className="two"><Button onClick={()=>saveCampaign('rascunho')} disabled={saving}><Copy size={17}/> {saving ? 'Salvando...' : 'Salvar rascunho'}</Button><Button className="primary" onClick={()=>saveCampaign('ativa')} disabled={saving}><Play size={17}/> {saving ? 'Salvando...' : form.sendMode==='agendar' ? 'Agendar campanha' : editing ? 'Salvar alterações' : 'Salvar campanha'}</Button></div>
+      <div className="manualCampaignNotice cleanNotice"><b>Campanha manual e funcional</b><p>Esta campanha será enviada manualmente para <b>todos os inscritos ativos</b>. Segmentação, automações e agendamentos recorrentes foram retirados desta tela até ficarem 100% operacionais.</p></div>
+      <div className="two"><Button onClick={()=>saveCampaign('rascunho')} disabled={saving}><Copy size={17}/> {saving ? 'Salvando...' : 'Salvar rascunho'}</Button><Button className="primary" onClick={()=>saveCampaign('ativa')} disabled={saving}><Play size={17}/> {saving ? 'Salvando...' : editing ? 'Salvar alterações' : 'Salvar campanha'}</Button></div>
       <div className="two"><Button onClick={testNotify}><Bell size={17}/> Enviar teste para mim</Button><Button onClick={resetForm}>Limpar</Button></div>
     </Card>
     <Card className="previewCard"><CampaignPreview form={form} imagePreview={imagePreview} loja={loja}/></Card>
@@ -866,8 +857,9 @@ function Campaigns({ data, setData, lojaId, loja, refreshData, user }) {
   </div>;
 }
 
-function CampaignList({ data, onToggle, onDelete, onSend, onEdit, onDuplicate, canEdit }) {
-  return <div className="campaignList">{data.campaigns.map(c=><div className="campaign" key={c.id}>{c.imageUrl && <img className="campaignThumb" src={c.imageUrl} alt=""/>}<div className="campaignInfo"><h4>{c.title}</h4><p>{c.msg}</p><small>{c.freq} • {c.duration}{c.scheduledAt ? ` • agendada: ${new Date(c.scheduledAt).toLocaleString('pt-BR')}` : ''}</small>{c.link && <small className="campaignLink">Destino: {c.link}</small>}</div><div className="metrics"><span><b>{c.sent}</b>Enviados</span><span><b>{c.clicks}</b>Cliques</span><span><b>{c.rate}</b>Taxa</span><Badge tone={c.status==='Ativa'?'green':c.status==='Programada'?'violet':c.status==='Enviada'?'blue':String(c.status).toLowerCase()==='rascunho'?'gray':'gray'}>{c.status}</Badge>{onToggle&&<><Button className="primary" onClick={()=>onSend?.(c)}><Send size={16}/> Enviar agora</Button>{canEdit?.(c) ? <Button onClick={()=>onEdit?.(c)}>Editar</Button> : <Button onClick={()=>onDuplicate?.(c)}>Duplicar</Button>}<Button onClick={()=>onDuplicate?.(c)}><Copy size={16}/> Copiar</Button><Button onClick={()=>onToggle(c)}>{c.status==='Ativa'?<Pause size={16}/>:<Play size={16}/>}</Button><Button onClick={()=>onDelete(c)}><Trash2 size={16}/></Button></>}<MoreVertical size={18}/></div></div>)}</div>;
+function CampaignList({ data, onDelete, onSend, onEdit, onDuplicate, canEdit }) {
+  if (!data?.campaigns?.length) return <p className="muted">Nenhuma campanha criada ainda.</p>;
+  return <div className="campaignList">{data.campaigns.map(c=><div className="campaign" key={c.id}>{c.imageUrl && <img className="campaignThumb" src={c.imageUrl} alt=""/>}<div className="campaignInfo"><h4>{c.title}</h4><p>{c.msg}</p><small>{String(c.status || 'Rascunho')} • envio manual para todos</small>{c.link && <small className="campaignLink">Destino: {c.link}</small>}</div><div className="metrics"><span><b>{c.sent}</b>Enviados</span><span><b>{c.clicks}</b>Cliques</span><span><b>{c.rate}</b>Taxa</span><Badge tone={c.status==='Ativa'?'green':c.status==='Enviada'?'blue':String(c.status).toLowerCase()==='rascunho'?'gray':'gray'}>{c.status}</Badge>{onSend&&<><Button className="primary" onClick={()=>onSend?.(c)}><Send size={16}/> Enviar</Button>{canEdit?.(c) ? <Button onClick={()=>onEdit?.(c)}>Editar</Button> : <Button onClick={()=>onDuplicate?.(c)}>Duplicar</Button>}<Button onClick={()=>onDelete(c)}><Trash2 size={16}/> Excluir</Button></>}<MoreVertical size={18}/></div></div>)}</div>;
 }
 
 function Customers({ data, setData, lojaId, refreshData, user }) {
@@ -1411,7 +1403,7 @@ function TargetIcon(){ return <Users size={20}/>; }
 
 function Seller({ user, setUser, data, setData, loja, refreshData, onLogout }) {
   const [active,setActive]=useState('dash');
-  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={sellerMenu} data={data} onLogout={onLogout}>{active==='dash'&&<Dashboard data={data} user={user} setActive={setActive} loja={loja}/>} {active==='camp'&&<Campaigns data={data} setData={setData} lojaId={loja?.id} loja={loja} refreshData={refreshData} user={user}/>} {active==='auto'&&<Automations user={user} setActive={setActive}/>} {active==='clients'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData} user={user}/>} {active==='capture'&&<Capture loja={loja} data={data} setData={setData} refreshData={refreshData} user={user}/>} {active==='segments'&&(hasPlanAccess(user?.plan || 'gratis','business') ? <Segments data={data}/> : <PremiumFeatureLock title="Segmentação avançada" required="business" setActive={setActive}>Organize inscritos por interesse e envie campanhas mais certeiras para grupos específicos. Este recurso é exclusivo do plano Business.</PremiumFeatureLock>)} {active==='reports'&&<Reports data={data} user={user}/>} {active==='results'&&<ResultsCenter data={data} user={user}/>} {active==='store'&&<StorePanel loja={loja} refreshData={refreshData} user={user}/>} {active==='plans'&&<Plans/>} {active==='support'&&<SupportPanel user={user} loja={loja} data={data} refreshData={refreshData}/>} {active==='config'&&<ConfigPanel user={user} setUser={setUser}/>}</Shell>;
+  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={sellerMenu} data={data} onLogout={onLogout}>{active==='dash'&&<Dashboard data={data} user={user} setActive={setActive} loja={loja}/>} {active==='camp'&&<Campaigns data={data} setData={setData} lojaId={loja?.id} loja={loja} refreshData={refreshData} user={user}/>} {active==='clients'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData} user={user}/>} {active==='results'&&<ResultsCenter data={data} user={user}/>} {active==='store'&&<StorePanel loja={loja} refreshData={refreshData} user={user}/>} {active==='plans'&&<Plans/>} {active==='support'&&<SupportPanel user={user} loja={loja} data={data} refreshData={refreshData}/>} {active==='config'&&<ConfigPanel user={user} setUser={setUser}/>}</Shell>;
 }
 
 function Admin({ user, setUser, data, setData, refreshData }) {
@@ -1572,7 +1564,6 @@ function Admin({ user, setUser, data, setData, refreshData }) {
     </Card>}
 
     {active==='plans'&&<Plans/>}
-    {active==='global'&&<Card><h3>Campanha global para vendedores</h3><p className="muted">Área reservada para avisos internos da plataforma aos vendedores.</p><input defaultValue="Novidade no Chamy"/><textarea defaultValue="Agora você pode criar campanhas automáticas em poucos cliques."/><Button className="primary"><Send size={17}/> Enviar aviso geral</Button></Card>}
     {active==='support'&&<AdminSupportPanel data={data} refreshData={refreshData}/>}
     {active==='settings'&&<ConfigPanel user={user} setUser={setUser}/>}
 
