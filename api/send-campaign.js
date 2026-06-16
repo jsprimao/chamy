@@ -184,11 +184,13 @@ export default async function handler(req, res) {
       }
     }
 
+    const nextTotalDisparos = Number(campaign.total_disparos || 0) + 1;
     const { error: updateError } = await supabase
       .from('campanhas')
-      .update({ status: 'Enviada' })
+      .update({ status: 'Enviada', total_disparos: nextTotalDisparos, ultimo_envio: new Date().toISOString() })
       .eq('id', campaign.id);
     if (updateError) debug.campaignStatusError = updateError.message;
+    debug.totalDisparos = nextTotalDisparos;
 
     debug.step = 'concluido';
     return json(res, 200, {

@@ -266,7 +266,7 @@ function ResultsCenter({ data, user }) {
       <Badge tone={Number(analytics.ctr) > 0 ? 'green' : 'gray'}>{analytics.ctr}% CTR médio</Badge>
     </Card>
     <div className="resultsGrid">
-      <Card><h3>🏆 Melhor campanha</h3><h2>{best ? best.title : 'Sem campanha campeã ainda'}</h2><p className="muted">{best ? `${best.sent} envios • ${best.clicks} cliques • ${best.rate}` : 'Envie campanhas e acompanhe o resultado aqui.'}</p></Card>
+      <Card><h3>🏆 Melhor campanha</h3><h2>{best ? (best.internalName || best.title) : 'Sem campanha campeã ainda'}</h2><p className="muted">{best ? `${best.sent} envios • ${best.clicks} cliques • ${best.rate}` : 'Envie campanhas e acompanhe o resultado aqui.'}</p></Card>
       <Card><h3>📈 Crescimento</h3><p><b>+{analytics.newThisWeek}</b> inscritos esta semana</p><p><b>+{analytics.newThisMonth}</b> inscritos este mês</p></Card>
       <Card><h3>💡 Próxima ação recomendada</h3><p>{analytics.subscribersUsed < 10 ? 'Compartilhe seu QR Code para captar mais inscritos.' : analytics.totalClicks === 0 ? 'Envie uma campanha com imagem e chamada curta para gerar os primeiros cliques.' : 'Duplique sua melhor campanha e teste outro horário.'}</p></Card>
     </div>
@@ -520,7 +520,7 @@ function SidebarValueCard({ user, data, setActive }) {
   const subPct = Math.min(100, Math.round((subscribers / plan.limit) * 100));
   const campPct = campaignLimit ? Math.min(100, Math.round((campaigns / campaignLimit) * 100)) : 100;
   const best = [...(data?.campaigns || [])].sort((a, b) => (Number(b.clicks || 0) - Number(a.clicks || 0)) || (Number(b.sent || 0) - Number(a.sent || 0)))[0];
-  const bestLabel = best ? best.title.replace(/^🔥|^✨/g, '').trim() : 'Nenhuma campanha ainda';
+  const bestLabel = best ? (best.internalName || best.title).replace(/^🔥|^✨/g, '').trim() : 'Nenhuma campanha ainda';
   const bestMetric = best ? `${Number(best.sent || 0)} envios • ${Number(best.clicks || 0)} cliques` : 'Crie sua primeira campanha';
 
   return <div className="accountSummary">
@@ -551,7 +551,7 @@ function Dashboard({ data, user, setActive, loja }) {
   const analytics = calculateAnalytics(data, user);
   const plan = plans[normalizePlan(user.plan)] || plans.gratis;
   const best = analytics.bestCampaign;
-  const bestTitle = best ? best.title : 'Nenhuma campanha enviada';
+  const bestTitle = best ? (best.internalName || best.title) : 'Nenhuma campanha enviada';
   const bestSubtitle = best ? `${Number(best.sent || 0)} envios • ${Number(best.clicks || 0)} cliques • ${best.rate || '0%'}` : 'Envie uma campanha para gerar métricas.';
 
   return <>
@@ -578,7 +578,7 @@ function Dashboard({ data, user, setActive, loja }) {
         <div className="realMetricGrid">
           <div><small>Novos inscritos</small><b>+{analytics.newThisMonth}</b><span>últimos 30 dias</span></div>
           <div><small>Campanhas criadas</small><b>{analytics.campaignsUsed}</b><span>no período atual</span></div>
-          <div><small>Melhor campanha</small><b>{best ? best.title : 'Sem dados'}</b><span>{best ? `${Number(best.sent || 0)} envios • ${Number(best.clicks || 0)} cliques` : 'envie uma campanha'}</span></div>
+          <div><small>Melhor campanha</small><b>{best ? (best.internalName || best.title) : 'Sem dados'}</b><span>{best ? `${Number(best.sent || 0)} envios • ${Number(best.clicks || 0)} cliques` : 'envie uma campanha'}</span></div>
           <div><small>Uso do plano</small><b>{analytics.subscriberPct}%</b><span>{analytics.subscribersUsed} de {analytics.planLimits.subscribers.toLocaleString('pt-BR')} inscritos</span></div>
         </div>
       </Card>
@@ -645,6 +645,7 @@ function CampaignPreview({ form, imagePreview, loja }) {
 
 function Campaigns({ data, setData, lojaId, loja, refreshData, user }) {
   const emptyForm = {
+    internalName: 'Promoção Relâmpago - 01',
     title: '🔥 Promoção Relâmpago',
     msg: 'Ofertas especiais por tempo limitado. Clique e aproveite agora!',
     link: '',
@@ -671,7 +672,7 @@ function Campaigns({ data, setData, lojaId, loja, refreshData, user }) {
   }
 
   function applyTemplate(title, msg) {
-    setForm(prev => ({ ...prev, title, msg }));
+    setForm(prev => ({ ...prev, internalName: prev.internalName || title.replace(/[🔥✨🎁🚀]/g, '').trim(), title, msg }));
   }
 
   function statusKey(status='') {
@@ -687,6 +688,7 @@ function Campaigns({ data, setData, lojaId, loja, refreshData, user }) {
     if (!canEdit(c)) return alert('Campanhas já enviadas não devem ser editadas para preservar o histórico. Use Duplicar campanha.');
     setEditing(c);
     setForm({
+      internalName: c.internalName || c.title || '',
       title: c.title || '',
       msg: c.msg || '',
       link: c.link || '',
@@ -706,7 +708,8 @@ function Campaigns({ data, setData, lojaId, loja, refreshData, user }) {
   function duplicateCampaign(c) {
     setEditing(null);
     setForm({
-      title: `${c.title || 'Campanha'} (Cópia)`,
+      internalName: `${c.internalName || c.title || 'Campanha'} (Cópia)`,
+      title: c.title || '',
       msg: c.msg || '',
       link: c.link || '',
       audience: c.audience || 'Todos',
@@ -749,10 +752,12 @@ function Campaigns({ data, setData, lojaId, loja, refreshData, user }) {
     if (!editing && planLimits.campaigns && (data?.campaigns?.length || 0) >= planLimits.campaigns) {
       return alert(`Você atingiu o limite de ${planLimits.campaigns} campanhas do plano ${planLimits.label}. Faça upgrade para continuar.`);
     }
+    const internalName = String(form.internalName || '').trim();
     const title = String(form.title || '').trim();
     const msg = String(form.msg || '').trim();
     const link = String(form.link || '').trim();
-    if (!title) return alert('Informe o título da campanha.');
+    if (!internalName) return alert('Informe o nome interno da campanha para seu controle.');
+    if (!title) return alert('Informe o título da notificação.');
     if (!msg) return alert('Informe a mensagem da campanha.');
     if (saveAs !== 'rascunho' && !link) return alert('Informe a URL de destino da campanha. Ela pode ser um catálogo, site, promoção ou WhatsApp.');
     if (link && !/^https?:\/\//i.test(link)) return alert('A URL precisa começar com https:// ou http://');
@@ -763,6 +768,7 @@ function Campaigns({ data, setData, lojaId, loja, refreshData, user }) {
       const status = saveAs === 'rascunho' ? 'Rascunho' : 'Ativa';
       const payload = {
         loja_id: lojaId,
+        nome_interno: internalName,
         titulo: title,
         mensagem: msg,
         link: link || null,
@@ -782,6 +788,7 @@ function Campaigns({ data, setData, lojaId, loja, refreshData, user }) {
         created = updated;
         setData({...data, campaigns: data.campaigns.map(c => c.id === editing.id ? {
           ...c,
+          internalName: updated.nome_interno || updated.titulo,
           title: updated.titulo,
           msg: updated.mensagem,
           link: updated.link || '',
@@ -796,7 +803,7 @@ function Campaigns({ data, setData, lojaId, loja, refreshData, user }) {
         const { data: inserted, error } = await supabase.from('campanhas').insert(payload).select('*').single();
         if (error) throw error;
         created = inserted;
-        setData({...data, campaigns:[{ id:created.id, title:created.titulo, msg:created.mensagem, link:created.link || '', imageUrl:created.imagem_url || '', status:created.status, audience:created.publico, freq:created.frequencia, duration:`${created.duracao_dias || 1} dias`, scheduledAt:created.agendada_para, sent:0, clicks:0, rate:'0%', date:'Agora' }, ...data.campaigns]});
+        setData({...data, campaigns:[{ id:created.id, internalName:created.nome_interno || created.titulo, title:created.titulo, msg:created.mensagem, link:created.link || '', imageUrl:created.imagem_url || '', status:created.status, audience:created.publico, freq:created.frequencia, duration:`${created.duracao_dias || 1} dias`, scheduledAt:created.agendada_para, sent:0, clicks:0, rate:'0%', date:'Agora' }, ...data.campaigns]});
       }
       resetForm();
       refreshData?.();
@@ -822,7 +829,7 @@ function Campaigns({ data, setData, lojaId, loja, refreshData, user }) {
   }
   async function sendCampaign(c){
     if (!c.link) return alert('Esta campanha não possui URL de destino. Edite ou duplique a campanha e informe um link de catálogo, promoção, site ou WhatsApp.');
-    if (!confirm(`Enviar a campanha "${c.title}" agora?`)) return;
+    if (!confirm(`Enviar a campanha "${c.internalName || c.title}" agora?`)) return;
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
@@ -854,7 +861,8 @@ function Campaigns({ data, setData, lojaId, loja, refreshData, user }) {
     <Card className="creator">
       <div className="cardHead"><div><h3>{editing ? 'Editar campanha' : 'Nova campanha'}</h3><p className="muted">Escolha um modelo, revise a prévia e salve como rascunho antes de enviar.</p></div>{editing && <Badge tone="blue">Editando</Badge>}</div>
       <div className="templates">{templates.map(([name,Icon,title,msg])=><button key={name} onClick={()=>applyTemplate(title,msg)}><Icon/><b>{name}</b></button>)}</div>
-      <label>Título</label><input value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
+      <label>Nome da campanha <span className="miniLabel">(controle interno, não aparece para o cliente)</span></label><input value={form.internalName} onChange={e=>setForm({...form,internalName:e.target.value})} placeholder="Ex: Novidades de Novembro/25 - 01"/>
+      <label>Título da notificação <span className="miniLabel">(aparece no celular/PC do cliente)</span></label><input value={form.title} onChange={e=>setForm({...form,title:e.target.value})}/>
       <label>Mensagem</label><textarea value={form.msg} onChange={e=>setForm({...form,msg:e.target.value})}/>
       <label>URL de destino da campanha</label><input value={form.link} onChange={e=>setForm({...form,link:e.target.value})} placeholder="https://catalogo.com.br/promocao ou https://wa.me/55..."/><p className="miniNote">Obrigatória para enviar. Em rascunhos, você pode preencher depois.</p>
       <label>Imagem da campanha</label>
@@ -873,7 +881,7 @@ function Campaigns({ data, setData, lojaId, loja, refreshData, user }) {
 
 function CampaignList({ data, onDelete, onSend, onEdit, onDuplicate, canEdit }) {
   if (!data?.campaigns?.length) return <p className="muted">Nenhuma campanha criada ainda.</p>;
-  return <div className="campaignList">{data.campaigns.map(c=><div className="campaign" key={c.id}>{c.imageUrl && <img className="campaignThumb" src={c.imageUrl} alt=""/>}<div className="campaignInfo"><h4>{c.title}</h4><p>{c.msg}</p><small>{String(c.status || 'Rascunho')} • envio manual para todos</small>{c.link && <small className="campaignLink">Destino: {c.link}</small>}</div><div className="metrics"><span><b>{c.sent}</b>Enviados</span><span><b>{c.clicks}</b>Cliques</span><span><b>{c.rate}</b>Taxa</span><Badge tone={c.status==='Ativa'?'green':c.status==='Enviada'?'blue':String(c.status).toLowerCase()==='rascunho'?'gray':'gray'}>{c.status}</Badge>{onSend&&<><Button className="primary" onClick={()=>onSend?.(c)}><Send size={16}/> Enviar</Button>{canEdit?.(c) ? <Button onClick={()=>onEdit?.(c)}>Editar</Button> : <Button onClick={()=>onDuplicate?.(c)}>Duplicar</Button>}<Button onClick={()=>onDelete(c)}><Trash2 size={16}/> Excluir</Button></>}<MoreVertical size={18}/></div></div>)}</div>;
+  return <div className="campaignList">{data.campaigns.map(c=><div className="campaign" key={c.id}>{c.imageUrl && <img className="campaignThumb" src={c.imageUrl} alt=""/>}<div className="campaignInfo"><h4>{c.internalName || c.title}</h4><p><b>Notificação:</b> {c.title}</p><p>{c.msg}</p><small>{String(c.status || 'Rascunho')} • envio manual para todos</small>{c.link && <small className="campaignLink">Destino: {c.link}</small>}</div><div className="metrics"><span><b>{c.sendRuns || 0}</b>Disparos</span><span><b>{c.sent}</b>Enviados</span><span><b>{c.clicks}</b>Cliques</span><span><b>{c.rate}</b>Taxa</span><Badge tone={c.status==='Ativa'?'green':c.status==='Enviada'?'blue':String(c.status).toLowerCase()==='rascunho'?'gray':'gray'}>{c.status}</Badge>{onSend&&<><Button className="primary" onClick={()=>onSend?.(c)}><Send size={16}/> Enviar</Button>{canEdit?.(c) ? <Button onClick={()=>onEdit?.(c)}>Editar</Button> : <Button onClick={()=>onDuplicate?.(c)}>Duplicar</Button>}<Button onClick={()=>onDelete(c)}><Trash2 size={16}/> Excluir</Button></>}<MoreVertical size={18}/></div></div>)}</div>;
 }
 
 function Customers({ data, setData, lojaId, refreshData, user }) {
@@ -1058,7 +1066,7 @@ function Reports({ data, user }){
   const ordered = [...(data.campaigns || [])].sort((a,b)=>Number(b.sent || 0) - Number(a.sent || 0));
   return <>
     <div className="stats">
-      <Stat Icon={TrendingUp} label="Melhor campanha" value={best ? best.title.slice(0,18) : 'Sem dados'} change={best ? `${best.sent} envios` : 'envie uma campanha'} />
+      <Stat Icon={TrendingUp} label="Melhor campanha" value={best ? (best.internalName || best.title).slice(0,18) : 'Sem dados'} change={best ? `${best.sent} envios` : 'envie uma campanha'} />
       <Stat Icon={Bell} label="Envios totais" value={analytics.totalSent.toLocaleString('pt-BR')} change="dados reais" color="blue" />
       <Stat Icon={MousePointerClick} label="Taxa de clique" value={`${analytics.ctr}%`} change={`${analytics.totalClicks} cliques`} color="green" />
     </div>
@@ -1529,7 +1537,7 @@ function Admin({ user, setUser, data, setData, refreshData }) {
           const sent = rows.length;
           const clicks = rows.filter(e=>e.clicou).length;
           const rate = sent ? `${Math.round((clicks/sent)*100)}%` : '0%';
-          return { id: c.id, title: c.titulo, msg: c.mensagem, link: c.link || '', imageUrl: c.imagem_url || '', status: c.status || 'rascunho', audience: c.publico || 'Todos', freq: c.frequencia || 'único', duration: `${c.duracao_dias || 1} dias`, scheduledAt: c.agendada_para, sent, clicks, rate, date: c.created_at ? new Date(c.created_at).toLocaleDateString('pt-BR') : '', createdAt: c.created_at };
+          return { id: c.id, internalName: c.nome_interno || c.titulo, title: c.titulo, msg: c.mensagem, link: c.link || '', imageUrl: c.imagem_url || '', sendRuns: Number(c.total_disparos || 0), lastSentAt: c.ultimo_envio || null, status: c.status || 'rascunho', audience: c.publico || 'Todos', freq: c.frequencia || 'único', duration: `${c.duracao_dias || 1} dias`, scheduledAt: c.agendada_para, sent, clicks, rate, date: c.created_at ? new Date(c.created_at).toLocaleDateString('pt-BR') : '', createdAt: c.created_at };
         })
       };
       setImpersonating({
@@ -1686,7 +1694,7 @@ function App(){
             const sent = rows.length;
             const clicks = rows.filter(e => e.clicou).length;
             const rate = sent ? `${Math.round((clicks / sent) * 100)}%` : '0%';
-            return { id: c.id, title: c.titulo, msg: c.mensagem, link: c.link || '', imageUrl: c.imagem_url || '', status: c.status || 'rascunho', audience: c.publico || 'Todos', freq: c.frequencia || 'único', duration: `${c.duracao_dias || 1} dias`, scheduledAt: c.agendada_para, sent, clicks, rate, date: c.created_at ? new Date(c.created_at).toLocaleDateString('pt-BR') : '', createdAt: c.created_at }; 
+            return { id: c.id, internalName: c.nome_interno || c.titulo, title: c.titulo, msg: c.mensagem, link: c.link || '', imageUrl: c.imagem_url || '', sendRuns: Number(c.total_disparos || 0), lastSentAt: c.ultimo_envio || null, status: c.status || 'rascunho', audience: c.publico || 'Todos', freq: c.frequencia || 'único', duration: `${c.duracao_dias || 1} dias`, scheduledAt: c.agendada_para, sent, clicks, rate, date: c.created_at ? new Date(c.created_at).toLocaleDateString('pt-BR') : '', createdAt: c.created_at }; 
           })
         }));
       }
