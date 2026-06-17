@@ -132,3 +132,5 @@
 .publicPromoBanner p{margin:0;color:#475569;line-height:1.45;font-size:14px}
 .successHint{font-weight:900;color:#047857!important;margin-top:8px!important}
 @media(max-width:760px){.publicPromoBanner{padding:13px}.publicPromoBanner b{font-size:15px}.publicPromoBanner p{font-size:13px}}
+
+.avatarLogo{object-fit:cover;background:#fff;border:1px solid rgba(124,58,237,.18);padding:2px;}

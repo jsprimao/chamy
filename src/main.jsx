@@ -466,7 +466,7 @@ function Login({ setUser }) {
 const sellerMenu = [ ['dash','Dashboard',BarChart3], ['camp','Campanhas',Send], ['clients','Inscritos',Users], ['store','Loja',Store], ['results','Resultados',TrendingUp], ['plans','Planos',Crown], ['support','Suporte',LifeBuoy], ['config','Configurações',Settings] ];
 const adminMenu = [ ['dash','Dashboard Geral',BarChart3], ['vendors','Vendedores',Store], ['plans','Planos',Crown], ['support','Suporte',LifeBuoy], ['settings','Configurações',Settings] ];
 
-function Shell({ user, setUser, active, setActive, menu, children, data, onLogout }) {
+function Shell({ user, setUser, active, setActive, menu, children, data, onLogout, loja }) {
   return <div className="app">
     <aside className="sidebar">
       <Logo />
@@ -479,7 +479,7 @@ function Shell({ user, setUser, active, setActive, menu, children, data, onLogou
       <button className="logout" onClick={async () => { if (onLogout) { onLogout(); return; } if (supabase) await supabase.auth.signOut(); setUser(null); }}><LogOut size={17}/> {onLogout ? 'Voltar ao admin' : 'Sair'}</button>
     </aside>
     <main>
-      <header className="topbar"><div className="topTitle"><Menu/><div><h1>{menu.find(m => m[0] === active)?.[1]}</h1><p>{user.role === 'admin' ? 'Administração geral da plataforma' : 'Visão geral da sua loja'}</p></div></div><div className="userArea"><HelpCircle/> <Bell/> <div className="avatar">{user.name.slice(0,2).toUpperCase()}</div><div><b>{user.name}</b><small>{user.role === 'admin' ? 'Dono da plataforma' : `Plano ${nicePlan(user.plan)}`}</small></div></div></header>
+      <header className="topbar"><div className="topTitle"><Menu/><div><h1>{menu.find(m => m[0] === active)?.[1]}</h1><p>{user.role === 'admin' ? 'Administração geral da plataforma' : 'Visão geral da sua loja'}</p></div></div><div className="userArea"><HelpCircle/> <Bell/> {user.role === 'admin' ? <div className="avatar">{(user.name || 'AD').slice(0,2).toUpperCase()}</div> : loja?.logo_url ? <img className="avatar avatarLogo" src={loja.logo_url} alt={loja?.nome || 'Logo da loja'} /> : <div className="avatar">{(loja?.nome || user.name || 'LO').slice(0,2).toUpperCase()}</div>}<div><b>{user.role === 'admin' ? user.name : (loja?.nome || user.name)}</b><small>{user.role === 'admin' ? 'Dono da plataforma' : `Plano ${nicePlan(user.plan)}`}</small></div></div></header>
       {user.role !== 'admin' && ['pausado','bloqueado','excluido'].includes(String(user.status || '').toLowerCase()) && <AccountStatusBanner status={user.status} />}
       {children}
     </main>
@@ -809,7 +809,12 @@ function Campaigns({ data, setData, lojaId, loja, refreshData, user }) {
       refreshData?.();
       alert(editing ? 'Campanha atualizada com sucesso.' : status === 'Rascunho' ? 'Rascunho salvo com sucesso.' : 'Campanha criada com sucesso. Você pode enviar agora na lista de campanhas.');
     } catch (error) {
-      alert(error.message || 'Falha ao salvar campanha.');
+      const msg = error.message || 'Falha ao salvar campanha.';
+      if (String(msg).includes('nome_interno') || String(msg).includes('total_disparos')) {
+        alert('O banco ainda não reconheceu os novos campos de controle de campanha. Rode o SQL da v34 no Supabase e aguarde alguns segundos para atualizar o schema cache.\n\nErro original: ' + msg);
+      } else {
+        alert(msg);
+      }
     } finally {
       setSaving(false);
     }
@@ -881,7 +886,7 @@ function Campaigns({ data, setData, lojaId, loja, refreshData, user }) {
 
 function CampaignList({ data, onDelete, onSend, onEdit, onDuplicate, canEdit }) {
   if (!data?.campaigns?.length) return <p className="muted">Nenhuma campanha criada ainda.</p>;
-  return <div className="campaignList">{data.campaigns.map(c=><div className="campaign" key={c.id}>{c.imageUrl && <img className="campaignThumb" src={c.imageUrl} alt=""/>}<div className="campaignInfo"><h4>{c.internalName || c.title}</h4><p><b>Notificação:</b> {c.title}</p><p>{c.msg}</p><small>{String(c.status || 'Rascunho')} • envio manual para todos</small>{c.link && <small className="campaignLink">Destino: {c.link}</small>}</div><div className="metrics"><span><b>{c.sendRuns || 0}</b>Disparos</span><span><b>{c.sent}</b>Enviados</span><span><b>{c.clicks}</b>Cliques</span><span><b>{c.rate}</b>Taxa</span><Badge tone={c.status==='Ativa'?'green':c.status==='Enviada'?'blue':String(c.status).toLowerCase()==='rascunho'?'gray':'gray'}>{c.status}</Badge>{onSend&&<><Button className="primary" onClick={()=>onSend?.(c)}><Send size={16}/> Enviar</Button>{canEdit?.(c) ? <Button onClick={()=>onEdit?.(c)}>Editar</Button> : <Button onClick={()=>onDuplicate?.(c)}>Duplicar</Button>}<Button onClick={()=>onDelete(c)}><Trash2 size={16}/> Excluir</Button></>}<MoreVertical size={18}/></div></div>)}</div>;
+  return <div className="campaignList">{data.campaigns.map(c=><div className="campaign" key={c.id}>{c.imageUrl && <img className="campaignThumb" src={c.imageUrl} alt=""/>}<div className="campaignInfo"><h4>{c.internalName || c.title}</h4><p><b>Notificação:</b> {c.title}</p><p>{c.msg}</p><small>{String(c.status || 'Rascunho')} • envio manual para todos</small>{c.link && <small className="campaignLink">Destino: {c.link}</small>}</div><div className="metrics"><span><b>{c.sendRuns || 0}</b>Disparos</span><span><b>{c.sent}</b>Enviados</span><span><b>{c.clicks}</b>Cliques</span><span><b>{c.rate}</b>Taxa</span><Badge tone={c.status==='Ativa'?'green':c.status==='Enviada'?'blue':String(c.status).toLowerCase()==='rascunho'?'gray':'gray'}>{c.status}</Badge>{onSend&&<><Button className="primary" onClick={()=>onSend?.(c)}><Send size={16}/> Enviar</Button>{canEdit?.(c) ? <Button onClick={()=>onEdit?.(c)}>Editar</Button> : <Button onClick={()=>onDuplicate?.(c)}>Duplicar</Button>}<Button onClick={()=>onDelete(c)}><Trash2 size={16}/> Excluir</Button></>}</div></div>)}</div>;
 }
 
 function Customers({ data, setData, lojaId, refreshData, user }) {
@@ -1432,7 +1437,7 @@ function TargetIcon(){ return <Users size={20}/>; }
 
 function Seller({ user, setUser, data, setData, loja, refreshData, onLogout }) {
   const [active,setActive]=useState('dash');
-  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={sellerMenu} data={data} onLogout={onLogout}>{active==='dash'&&<Dashboard data={data} user={user} setActive={setActive} loja={loja}/>} {active==='camp'&&<Campaigns data={data} setData={setData} lojaId={loja?.id} loja={loja} refreshData={refreshData} user={user}/>} {active==='clients'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData} user={user}/>} {active==='results'&&<ResultsCenter data={data} user={user}/>} {active==='store'&&<StorePanel loja={loja} refreshData={refreshData} user={user}/>} {active==='plans'&&<Plans/>} {active==='support'&&<SupportPanel user={user} loja={loja} data={data} refreshData={refreshData}/>} {active==='config'&&<ConfigPanel user={user} setUser={setUser}/>}</Shell>;
+  return <Shell user={user} setUser={setUser} active={active} setActive={setActive} menu={sellerMenu} data={data} onLogout={onLogout} loja={loja}>{active==='dash'&&<Dashboard data={data} user={user} setActive={setActive} loja={loja}/>} {active==='camp'&&<Campaigns data={data} setData={setData} lojaId={loja?.id} loja={loja} refreshData={refreshData} user={user}/>} {active==='clients'&&<Customers data={data} setData={setData} lojaId={loja?.id} refreshData={refreshData} user={user}/>} {active==='results'&&<ResultsCenter data={data} user={user}/>} {active==='store'&&<StorePanel loja={loja} refreshData={refreshData} user={user}/>} {active==='plans'&&<Plans/>} {active==='support'&&<SupportPanel user={user} loja={loja} data={data} refreshData={refreshData}/>} {active==='config'&&<ConfigPanel user={user} setUser={setUser}/>}</Shell>;
 }
 
 function Admin({ user, setUser, data, setData, refreshData }) {
